@@ -1,6 +1,11 @@
-<FilesMatch "\.(db|txt|json|log)$">
+<FilesMatch "\.(db|db-wal|db-shm|sqlite|txt|json|log)$">
     Order deny,allow
     Deny from all
 </FilesMatch>
+
+<Files "config.php">
+    Order deny,allow
+    Deny from all
+</Files>
 
 Options -Indexes

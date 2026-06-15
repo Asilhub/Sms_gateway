@@ -1,6 +1,7 @@
 # ============ MAXFIY / RUNTIME (server) ============
 # maxfiy kalitlar — config.example.php ni commit qiling, config.php ni emas
 config.php
+server-backup-*/
 
 # SQLite ma'lumotlar bazasi (kontaktlar, navbat)
 *.db
