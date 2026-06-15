@@ -25,6 +25,7 @@ $broadcast_config_file = __DIR__ . '/broadcast_config.json';
 $night_mode_file = __DIR__ . '/night_mode.json';
 $smart_break_file = __DIR__ . '/smart_break.txt';
 $streak_file = __DIR__ . '/error_streak.txt';
+$broadcast_batch_file = __DIR__ . '/broadcast_batch.json'; // joriy yuborish partiyasi (progress uchun)
 
 date_default_timezone_set('Asia/Tashkent');
 
@@ -317,25 +318,170 @@ function getModeTextShort($mode)
     }
 }
 
+// ---- PROGRESS / PARTIYA ----
+
+/** Matnli progress-bar: ███████░░░ 70% */
+function progressBar($done, $total, $width = 12)
+{
+    if ($total <= 0)
+        return str_repeat('░', $width) . " 0%";
+    $ratio = max(0, min(1, $done / $total));
+    $filled = (int)round($ratio * $width);
+    $pct = (int)round($ratio * 100);
+    return str_repeat('█', $filled) . str_repeat('░', $width - $filled) . " {$pct}%";
+}
+
+function getBatch()
+{
+    global $broadcast_batch_file;
+    if (!file_exists($broadcast_batch_file))
+        return null;
+    $d = json_decode(file_get_contents($broadcast_batch_file), true);
+    return $d ?: null;
+}
+
+function setBatch($startId, $total)
+{
+    global $broadcast_batch_file;
+    file_put_contents($broadcast_batch_file, json_encode(['start_id' => (int)$startId, 'total' => (int)$total, 'ts' => time()]));
+}
+
+function clearBatch()
+{
+    global $broadcast_batch_file;
+    if (file_exists($broadcast_batch_file))
+        @unlink($broadcast_batch_file);
+}
+
+/** Jonli HOLAT kartasi: matn + holatga mos inline tugmalar qaytaradi. */
+function buildDashboard()
+{
+    global $db;
+    $ds = getDeviceStatusText();
+    $bState = getBroadcastState();
+    $conf = getBroadcastConfig();
+
+    if (isSmartBreakActive())
+        $state = "😴 Dam olmoqda (" . ceil(getSmartBreakRemaining() / 60) . " daq)";
+    elseif (isNightModeActive()) {
+        $nm = getNightModeConfig();
+        $state = "🌙 Tungi rejim ({$nm['end']} gacha)";
+    } elseif ($bState == "paused")
+        $state = "⏸ To'xtatib turilgan";
+    else
+        $state = "▶️ Faol";
+
+    $pending = (int)$db->query("SELECT COUNT(*) FROM queue WHERE status='pending'")->fetchColumn();
+    $processing = (int)$db->query("SELECT COUNT(*) FROM queue WHERE status='processing'")->fetchColumn();
+    $running = ($pending + $processing) > 0;
+
+    $msg = "📊 <b>HOLAT</b>\n\n";
+    $msg .= "{$ds['icon']} Qurilmalar: <b>{$ds['text']}</b>\n";
+    $msg .= "⚙️ Jarayon: <b>$state</b>\n";
+
+    $batch = getBatch();
+    if ($batch && $batch['total'] > 0) {
+        $start = (int)$batch['start_id'];
+        $total = (int)$batch['total'];
+        $sent = (int)$db->query("SELECT COUNT(*) FROM queue WHERE id>=$start AND status='sent'")->fetchColumn();
+        $failed = (int)$db->query("SELECT COUNT(*) FROM queue WHERE id>=$start AND status='failed'")->fetchColumn();
+        $done = $sent + $failed;
+        $left = max(0, $total - $done);
+        $title = $running ? "📨 Yuborilmoqda" : "✅ Yakunlandi";
+        $msg .= "\n<b>$title</b>\n";
+        $msg .= "<code>" . progressBar($done, $total) . "</code>\n";
+        $msg .= "✅ <b>$sent</b> · ❌ <b>$failed</b> · ⏳ <b>$left</b>  (jami $total)\n";
+    } elseif ($running) {
+        $msg .= "\n📨 <b>Yuborilmoqda</b>\n";
+        $msg .= "⏳ Navbatda: <b>$pending</b> · 🔄 Jarayonda: <b>$processing</b>\n";
+    } else {
+        $sentAll = (int)$db->query("SELECT COUNT(*) FROM queue WHERE status='sent'")->fetchColumn();
+        $msg .= "\n📭 Faol yuborish yo'q\n";
+        $msg .= "✅ Navbatdagi yuborilganlar: <b>$sentAll</b>\n";
+    }
+
+    $totalContacts = (int)$db->query("SELECT COUNT(*) FROM contacts")->fetchColumn();
+    $msg .= "\n👥 Kontaktlar: <b>$totalContacts</b> · 🔄 " . getModeTextShort($conf['mode'] ?? 'asc');
+    $msg .= "\n🕒 " . date('H:i:s');
+
+    $rows = [];
+    if ($running) {
+        if ($bState == 'paused')
+            $rows[] = [['text' => "▶️ Davom ettirish", 'callback_data' => "st_resume"], ['text' => "🔄 Yangilash", 'callback_data' => "st_refresh"]];
+        else
+            $rows[] = [['text' => "⏸ Pauza", 'callback_data' => "st_pause"], ['text' => "🔄 Yangilash", 'callback_data' => "st_refresh"]];
+        $rows[] = [['text' => "🛑 To'xtatish (navbatni o'chirish)", 'callback_data' => "st_stop"]];
+    } else {
+        $rows[] = [['text' => "🔄 Yangilash", 'callback_data' => "st_refresh"]];
+    }
+
+    return ['text' => $msg, 'kb' => ['inline_keyboard' => $rows]];
+}
+
+/** Ixcham qurilmalar ro'yxati: sarlavha-xulosa + har qurilmaga 1 ta tugma. */
+function buildDeviceList()
+{
+    global $db;
+    $devices = getAllDevices();
+    if (empty($devices))
+        return ['text' => "📱 <b>QURILMALAR</b>\n\nHech qanday qurilma ulanmagan.\n\n<i>Ilovani telefonda ishga tushiring — qurilma avtomatik ro'yxatga olinadi.</i>", 'kb' => null];
+
+    $online = 0;
+    $sentSum = 0;
+    $failSum = 0;
+    foreach ($devices as $d) {
+        if ($d['is_active'] && isDeviceOnline($d))
+            $online++;
+        $sentSum += (int)$d['tasks_sent'];
+        $failSum += (int)$d['tasks_failed'];
+    }
+    $total = count($devices);
+
+    $msg = "📱 <b>QURILMALAR</b>\n\n";
+    $msg .= "🟢 Onlayn: <b>$online / $total</b>\n";
+    $msg .= "✅ Jami yuborildi: <b>$sentSum</b> · ❌ <b>$failSum</b>\n\n";
+    $msg .= "<i>Boshqarish uchun qurilmani tanlang</i> 👇";
+
+    $buttons = [];
+    foreach ($devices as $d) {
+        $icon = ($d['is_active'] && isDeviceOnline($d)) ? "🟢" : ($d['is_active'] ? "🟡" : "🔴");
+        $name = $d['name'] ?: $d['device_id'];
+        if (mb_strlen($name, 'UTF-8') > 20)
+            $name = mb_substr($name, 0, 20, 'UTF-8');
+        $buttons[] = [['text' => "$icon $name · {$d['tasks_sent']}✓", 'callback_data' => "dev_" . $d['device_id']]];
+    }
+
+    $conf = getBroadcastConfig();
+    $dm = $conf['device_mode'] ?? 'all';
+    if ($dm == 'all')
+        $dmText = "Hammasi";
+    elseif ($dm == 'round_robin')
+        $dmText = "Teng taqsimlash";
+    else {
+        $dev = getDevice($dm);
+        $dmText = $dev ? ($dev['name'] ?: $dev['device_id']) : $dm;
+    }
+    $buttons[] = [['text' => "🎯 Yuborish qurilmasi: $dmText", 'callback_data' => "devtarget"]];
+
+    return ['text' => $msg, 'kb' => ['inline_keyboard' => $buttons]];
+}
+
 // ---- KEYBOARDS ----
 
 function mainKeyboard()
 {
     return ['keyboard' => [
-            [['text' => "✉️ Broadcast"], ['text' => "📡 Status"]],
-            [['text' => "📱 Qurilmalar"], ['text' => "⚙️ Boshqaruv"]]
+            [['text' => "✉️ Ommaviy SMS"]],
+            [['text' => "📊 Holat"], ['text' => "🧪 Test SMS"]],
+            [['text' => "📱 Qurilmalar"], ['text' => "📂 Kontaktlar"]],
+            [['text' => "🌙 Tungi rejim"], ['text' => "🗑️ Tozalash"]]
         ], 'resize_keyboard' => true];
 }
 
 function controlKeyboard()
 {
-    return ['keyboard' => [
-            [['text' => "▶️ Davom"], ['text' => "⏸ Pauza"]],
-            [['text' => "🛑 To'xtatish"], ['text' => "🗑️ Tozalash"]],
-            [['text' => "Test SMS"], ['text' => "📂 Kontaktlar"]],
-            [['text' => "🌙 Tungi rejim"]],
-            [['text' => "🔙 Asosiy Menyu"]]
-        ], 'resize_keyboard' => true];
+    // Endi asosiy menyu — eski "Boshqaruv" tugmalari Holat kartasiga ko'chirildi.
+    return mainKeyboard();
 }
 
 // ============ TELEGRAM API ============
@@ -733,7 +879,9 @@ if (isset($update['callback_query'])) {
         }
 
         answerCallback($cb['id'], "✅ $label");
-        sendMessage($chat_id, "📱 Yuborish qurilmasi: <b>$label</b>", mainKeyboard(), "HTML");
+        // Tanlovdan keyin ixcham qurilmalar ro'yxatiga qaytamiz (inline)
+        $dl = buildDeviceList();
+        editMessage($chat_id, $msg_id, $dl['text'], $dl['kb'], "HTML");
         exit;
     }
 
@@ -875,6 +1023,9 @@ if (isset($update['callback_query'])) {
                 $rrDevices = [null]; // fallback
         }
 
+        // Joriy partiya boshlanish ID si (progress hisobi uchun)
+        $startId = (int)$db->query("SELECT COALESCE(MAX(id),0) FROM queue")->fetchColumn() + 1;
+
         $ins = $db->prepare("INSERT INTO queue (phone, message, assigned_device) VALUES (:p, :m, :d)");
         $db->beginTransaction();
         $added = 0;
@@ -895,19 +1046,14 @@ if (isset($update['callback_query'])) {
 
         @unlink($msg_file);
         setBroadcastState("active");
-
-        if ($deviceMode == 'all')
-            $devLabel = "Barcha qurilmalar";
-        elseif ($deviceMode == 'round_robin')
-            $devLabel = "Teng taqsimlash (" . count($rrDevices) . " qurilma)";
-        else {
-            $dev = getDevice($deviceMode);
-            $devLabel = $dev ? ($dev['name'] ?: $dev['device_id']) : $deviceMode;
-        }
+        setBatch($startId, $added);
 
         deleteMessage($chat_id, $msg_id);
-        sendMessage($chat_id, "✅ <b>Boshlandi!</b>\n\n🚀 <b>$added</b> ta SMS navbatga qo'shildi\n🔄 Tartib: <b>" . getModeTextShort($conf['mode']) . "</b>\n📱 Qurilma: <b>$devLabel</b>\n\n<i>'⚙️ Boshqaruv' dan boshqaring</i>", mainKeyboard(), "HTML");
-        answerCallback($cb['id'], "✅ Boshlandi!");
+        sendMessage($chat_id, "🚀 <b>$added</b> ta SMS navbatga qo'shildi! Yuborish boshlandi 👇", mainKeyboard(), "HTML");
+        // Darhol jonli HOLAT kartasini ko'rsatamiz — jarayonni shu yerdan kuzatasiz
+        $dash = buildDashboard();
+        sendMessage($chat_id, $dash['text'], $dash['kb'], "HTML");
+        answerCallback($cb['id'], "🚀 Boshlandi!");
         exit;
     }
 
@@ -920,49 +1066,85 @@ if (isset($update['callback_query'])) {
         exit;
     }
 
+    // ---- HOLAT KARTASI TUGMALARI (jonli) ----
+    if ($data == "st_refresh") {
+        $dash = buildDashboard();
+        editMessage($chat_id, $msg_id, $dash['text'], $dash['kb'], "HTML");
+        answerCallback($cb['id'], "🔄 Yangilandi");
+        exit;
+    }
+    if ($data == "st_pause") {
+        setBroadcastState("paused");
+        $dash = buildDashboard();
+        editMessage($chat_id, $msg_id, $dash['text'], $dash['kb'], "HTML");
+        answerCallback($cb['id'], "⏸ To'xtatildi");
+        exit;
+    }
+    if ($data == "st_resume") {
+        setBroadcastState("active");
+        if (file_exists($smart_break_file))
+            @unlink($smart_break_file);
+        @file_put_contents($streak_file, 0);
+        $dash = buildDashboard();
+        editMessage($chat_id, $msg_id, $dash['text'], $dash['kb'], "HTML");
+        answerCallback($cb['id'], "▶️ Davom");
+        exit;
+    }
+    if ($data == "st_stop") {
+        $p = $db->query("SELECT COUNT(*) FROM queue WHERE status IN ('pending','processing')")->fetchColumn();
+        editMessage($chat_id, $msg_id, "🛑 <b>To'xtatishni tasdiqlang</b>\n\nNavbatdagi <b>$p</b> ta SMS o'chiriladi (yuborilganlar qoladi).", ['inline_keyboard' => [[
+            ['text' => "🛑 Ha, to'xtat", 'callback_data' => "stop_confirm"],
+            ['text' => "🔙 Yo'q", 'callback_data' => "stop_cancel"]
+        ]]], "HTML");
+        answerCallback($cb['id'], "");
+        exit;
+    }
+
     // ---- STOP ----
     if ($data == "stop_confirm") {
         $deleted = $db->query("SELECT COUNT(*) FROM queue WHERE status IN ('pending','processing')")->fetchColumn();
         $db->exec("DELETE FROM queue WHERE status IN ('pending','processing')");
         setBroadcastState("active");
+        clearBatch();
         @file_put_contents($streak_file, 0);
         if (file_exists($smart_break_file))
             @unlink($smart_break_file);
         deleteMessage($chat_id, $msg_id);
-        sendMessage($chat_id, "🛑 <b>To'xtatildi!</b> $deleted ta xabar o'chirildi.", controlKeyboard(), "HTML");
+        sendMessage($chat_id, "🛑 <b>To'xtatildi!</b> $deleted ta xabar o'chirildi.", mainKeyboard(), "HTML");
         answerCallback($cb['id'], "🛑 To'xtatildi");
         exit;
     }
     if ($data == "stop_cancel") {
-        deleteMessage($chat_id, $msg_id);
-        sendMessage($chat_id, "Bekor qilindi.", controlKeyboard());
+        $dash = buildDashboard();
+        editMessage($chat_id, $msg_id, $dash['text'], $dash['kb'], "HTML");
+        answerCallback($cb['id'], "Bekor");
         exit;
     }
 
     // ---- QURILMA BOSHQARUVI ----
     if ($data == "dev_list") {
-        $devices = getAllDevices();
-        if (empty($devices)) {
-            editMessage($chat_id, $msg_id, "📱 Hech qanday qurilma ulanmagan.\n\n<i>Termux da worker ishga tushiring — qurilma avtomatik ro'yxatga olinadi.</i>", null, "HTML");
-            answerCallback($cb['id'], "Qurilma yo'q");
-            exit;
-        }
-
-        $msg = "📱 <b>QURILMALAR</b>\n\n";
-        $buttons = [];
-        foreach ($devices as $d) {
-            $icon = ($d['is_active'] && isDeviceOnline($d)) ? "🟢" : ($d['is_active'] ? "🟡" : "🔴");
-            $name = $d['name'] ?: $d['device_id'];
-            $msg .= "$icon <b>$name</b>\n";
-            $msg .= "   📊 Yuborildi: {$d['tasks_sent']} | Xato: {$d['tasks_failed']}\n";
-            $msg .= "   ⏱ " . getLastSeenText($d['last_seen']) . "\n\n";
-
-            $buttons[] = [['text' => "$icon $name — Sozlash", 'callback_data' => "dev_" . $d['device_id']]];
-        }
-        $buttons[] = [['text' => "🔙 Ortga", 'callback_data' => "dev_back"]];
-
-        editMessage($chat_id, $msg_id, $msg, ['inline_keyboard' => $buttons], "HTML");
+        $dl = buildDeviceList();
+        editMessage($chat_id, $msg_id, $dl['text'], $dl['kb'], "HTML");
         answerCallback($cb['id'], "📱 Qurilmalar");
+        exit;
+    }
+
+    // ---- BROADCAST QURILMA TANLASH (jonli) ----
+    if ($data == "devtarget") {
+        $devices = getAllDevices();
+        $rows = [];
+        $rows[] = [
+            ['text' => "📱 Hammasi", 'callback_data' => "devmode_all"],
+            ['text' => "🔄 Teng taqsimlash", 'callback_data' => "devmode_round_robin"]
+        ];
+        foreach ($devices as $d) {
+            $icon = isDeviceOnline($d) ? "🟢" : "🔴";
+            $name = $d['name'] ?: $d['device_id'];
+            $rows[] = [['text' => "$icon $name", 'callback_data' => "devmode_" . $d['device_id']]];
+        }
+        $rows[] = [['text' => "🔙 Ortga", 'callback_data' => "dev_list"]];
+        editMessage($chat_id, $msg_id, "🎯 <b>Yuborish qurilmasi</b>\n\nOmmaviy SMS qaysi qurilma(lar)dan ketsin?", ['inline_keyboard' => $rows], "HTML");
+        answerCallback($cb['id'], "🎯 Tanlang");
         exit;
     }
 
@@ -1183,55 +1365,16 @@ if (isset($update['message'])) {
         sendMessage($chat_id, $msg, mainKeyboard(), "HTML");
     }
 
-    // ---- QURILMALAR ----
+    // ---- QURILMALAR (ixcham) ----
     elseif ($text == "📱 Qurilmalar") {
-        $devices = getAllDevices();
-        if (empty($devices)) {
-            sendMessage($chat_id, "📱 <b>Qurilmalar</b>\n\nHech qanday qurilma ulanmagan.\n\n<i>Termux da worker ishga tushiring — avtomatik ro'yxatga olinadi.</i>", mainKeyboard(), "HTML");
-            exit;
-        }
-
-        $msg = "📱 <b>QURILMALAR</b>\n\n";
-        $buttons = [];
-        foreach ($devices as $d) {
-            $icon = ($d['is_active'] && isDeviceOnline($d)) ? "🟢" : ($d['is_active'] ? "🟡" : "🔴");
-            $name = $d['name'] ?: $d['device_id'];
-            $msg .= "$icon <b>" . e($name) . "</b>\n";
-            $msg .= "   📊 {$d['tasks_sent']} yuborildi | {$d['tasks_failed']} xato\n";
-            $msg .= "   ⏱ " . getLastSeenText($d['last_seen']) . "\n\n";
-            $buttons[] = [['text' => "$icon $name — Sozlash", 'callback_data' => "dev_" . $d['device_id']]];
-        }
-
-        // Qurilma tanlash (broadcast uchun)
-        $conf = getBroadcastConfig();
-        $dm = $conf['device_mode'] ?? 'all';
-        if ($dm == 'all')
-            $dmText = "📱 Hammasi";
-        elseif ($dm == 'round_robin')
-            $dmText = "🔄 Teng taqsimlash";
-        else {
-            $dev = getDevice($dm);
-            $dmText = "📱 " . ($dev ? ($dev['name'] ?: $dev['device_id']) : $dm);
-        }
-        $msg .= "━━━━━━━━━━━━━━━━━━━━\n";
-        $msg .= "📡 Broadcast qurilmasi: <b>$dmText</b>";
-
-        // Device mode tugmalari
-        $modeButtons = [['text' => "📱 Hammasi", 'callback_data' => "devmode_all"]];
-        $modeButtons[] = ['text' => "🔄 Teng", 'callback_data' => "devmode_round_robin"];
-        $buttons[] = $modeButtons;
-
-        foreach ($devices as $d) {
-            $name = $d['name'] ?: $d['device_id'];
-            $buttons[] = [['text' => "📡 Faqat: $name", 'callback_data' => "devmode_" . $d['device_id']]];
-        }
-
-        sendMessage($chat_id, $msg, ['inline_keyboard' => $buttons], "HTML");
+        $dl = buildDeviceList();
+        sendMessage($chat_id, $dl['text'], $dl['kb'], "HTML");
     }
 
-    // ---- BOSHQARUV ----
+    // ---- BOSHQARUV (eski — Holat kartasiga ko'chirildi) ----
     elseif ($text == "⚙️ Boshqaruv") {
-        sendMessage($chat_id, "⚙️ <b>BOSHQARUV</b>\n\n<i>Broadcast jarayonini boshqaring</i> 👇", controlKeyboard(), "HTML");
+        $dash = buildDashboard();
+        sendMessage($chat_id, $dash['text'], $dash['kb'], "HTML");
     }
 
     elseif ($text == "⏸ Pauza") {
@@ -1257,55 +1400,10 @@ if (isset($update['message'])) {
                 ]]], "HTML");
     }
 
-    // ---- STATUS ----
-    elseif ($text == "📡 Status") {
-        $ds = getDeviceStatusText();
-        $stats = $db->query("SELECT status, COUNT(*) as cnt FROM queue GROUP BY status")->fetchAll(PDO::FETCH_KEY_PAIR);
-        $totalContacts = $db->query("SELECT COUNT(*) FROM contacts")->fetchColumn();
-        $conf = getBroadcastConfig();
-        $bState = getBroadcastState();
-
-        if (isSmartBreakActive())
-            $stateIcon = "😴 DAM OLYAPTI (" . ceil(getSmartBreakRemaining() / 60) . " daq)";
-        elseif (isNightModeActive()) {
-            $nm = getNightModeConfig();
-            $stateIcon = "🌙 TUNGI REJIM ({$nm['end']} gacha)";
-        }
-        elseif ($bState == "paused")
-            $stateIcon = "⏸ PAUSED";
-        else
-            $stateIcon = "▶️ Active";
-
-        $dm = $conf['device_mode'] ?? 'all';
-        if ($dm == 'all')
-            $dmText = "Hammasi";
-        elseif ($dm == 'round_robin')
-            $dmText = "Teng taqsimlash";
-        else {
-            $dev = getDevice($dm);
-            $dmText = $dev ? ($dev['name'] ?: $dev['device_id']) : $dm;
-        }
-
-        $msg = "📡 <b>STATUS</b>\n\n";
-        $msg .= "{$ds['icon']} Qurilmalar: <b>{$ds['text']}</b>\n";
-        $msg .= "⚙️ Jarayon: <b>$stateIcon</b>\n";
-        $msg .= "🔄 Tartib: <b>" . getModeTextShort($conf['mode'] ?? 'asc') . "</b>\n";
-        $msg .= "📱 Qurilma: <b>$dmText</b>\n\n";
-        $msg .= "👥 Kontaktlar: <b>$totalContacts</b>\n";
-        $msg .= "📊 <b>Navbat:</b>\n";
-        $msg .= "⏳ Kutmoqda: <code>" . ($stats['pending'] ?? 0) . "</code>\n";
-        $msg .= "🔄 Yuborilmoqda: <code>" . ($stats['processing'] ?? 0) . "</code>\n";
-        $msg .= "✅ Yuborildi: <code>" . ($stats['sent'] ?? 0) . "</code>\n";
-        $msg .= "❌ Xato: <code>" . ($stats['failed'] ?? 0) . "</code>";
-
-        $status_kb = ['inline_keyboard' => [
-                [
-                    ['text' => "🔽 Boshidan", 'callback_data' => "set_mode_asc"],
-                    ['text' => "🔼 Oxiridan", 'callback_data' => "set_mode_desc"],
-                ],
-                [['text' => "🔀 Aralash", 'callback_data' => "set_mode_random"]]
-            ]];
-        sendMessage($chat_id, $msg, $status_kb, "HTML");
+    // ---- HOLAT (jonli dashboard) ----
+    elseif ($text == "📊 Holat" || $text == "📡 Status") {
+        $dash = buildDashboard();
+        sendMessage($chat_id, $dash['text'], $dash['kb'], "HTML");
     }
 
     // ---- KONTAKTLAR ----
@@ -1329,7 +1427,8 @@ if (isset($update['message'])) {
     elseif ($text == "🗑️ Navbatni tozalash") {
         $c = $db->query("SELECT COUNT(*) FROM queue")->fetchColumn();
         $db->exec("DELETE FROM queue");
-        sendMessage($chat_id, "🗑️ $c ta o'chirildi!", controlKeyboard());
+        clearBatch();
+        sendMessage($chat_id, "🗑️ $c ta o'chirildi!", mainKeyboard());
     }
     elseif ($text == "❌ Kontaktlarni o'chirish") {
         $c = $db->query("SELECT COUNT(*) FROM contacts")->fetchColumn();
@@ -1343,14 +1442,14 @@ if (isset($update['message'])) {
     }
 
     // ---- BROADCAST ----
-    elseif ($text == "✉️ Broadcast") {
+    elseif ($text == "✉️ Ommaviy SMS" || $text == "✉️ Broadcast") {
         $count = $db->query("SELECT COUNT(*) FROM contacts")->fetchColumn();
         if ($count == 0) {
-            sendMessage($chat_id, "⚠️ Kontaktlar yo'q!", mainKeyboard());
+            sendMessage($chat_id, "⚠️ Avval kontakt qo'shing!\n\n📂 Kontaktlar → .txt/.csv fayl tashlang.", mainKeyboard());
             exit;
         }
         file_put_contents($status_file, "WAIT_FOR_MSG");
-        sendMessage($chat_id, "📝 <b>Broadcast</b>\n\n👥 Qabul qiluvchilar: <b>$count</b> ta\n\n✍️ Xabar matnini yozing.\n<i>Uzun matn va emoji ham bo'ladi (uzun bo'lsa bir nechta SMS sifatida ketadi).</i>", ['remove_keyboard' => true], "HTML");
+        sendMessage($chat_id, "✉️ <b>Ommaviy SMS</b>\n\n👥 Qabul qiluvchilar: <b>$count</b> ta\n\n✍️ Xabar matnini yozing.\n<i>Uzun matn va emoji ham bo'ladi (uzun bo'lsa bir nechta SMS sifatida ketadi).</i>", ['remove_keyboard' => true], "HTML");
     }
 
     elseif ($state == "WAIT_FOR_MSG") {
@@ -1381,9 +1480,9 @@ if (isset($update['message'])) {
     }
 
     // ---- TEST SMS ----
-    elseif ($text == "Test SMS") {
+    elseif ($text == "🧪 Test SMS" || $text == "Test SMS") {
         file_put_contents($status_file, "WAIT_FOR_TEST_SMS");
-        sendMessage($chat_id, "🧪 <b>TEST SMS</b>\n\nFormat:\n<code>+998901234567 Salom dunyo</code>\n\n<i>⚡ Navbatsiz, darhol yuboriladi</i>", ['remove_keyboard' => true], "HTML");
+        sendMessage($chat_id, "🧪 <b>TEST SMS</b>\n\nFormat:\n<code>+998901234567 Salom 😀 dunyo</code>\n\n<i>⚡ Navbatsiz, darhol yuboriladi. Emoji ham sinab ko'ring.</i>", ['remove_keyboard' => true], "HTML");
     }
 
     elseif ($state == "WAIT_FOR_TEST_SMS") {

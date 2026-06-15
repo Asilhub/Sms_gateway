@@ -41,7 +41,20 @@ Ta'lim kompaniyasi (idrokedu.uz) o'z kontaktlariga ommaviy SMS yuborish uchun is
 - Yangi versiya chiqarganda: build.gradle versionCode++, webhook.php `version` endpoint
   latest_code/name yangilash, APK ni serverga (SmsGateway.apk) yuklash.
 
-## v0.4.0 (app + server, deploy qilingan 2026-06-16) — joriy
+## Bot UI yangilanishi (server, deploy qilingan 2026-06-16) — joriy
+Telegram bot UX qayta ishlandi (faqat `webhook.php`):
+1. ✅ **Jonli HOLAT dashboard** (`buildDashboard()`): progress-bar (█░ %), holat, onlayn qurilmalar,
+   joriy partiya ✅/❌/⏳. Inline tugmalar: ⏸ Pauza / ▶️ Davom / 🔄 Yangilash / 🛑 To'xtatish
+   (`st_pause/st_resume/st_refresh/st_stop`). Pauza/Stop endi DOIMIY klaviaturada emas — shu kartada.
+2. ✅ **Partiya progressi**: broadcast confirm'da `setBatch(startId, total)` → `broadcast_batch.json`;
+   dashboard `id>=start_id` bo'yicha sent/failed sanaydi. `clearBatch()` stop/tozalashda.
+3. ✅ **Ixcham qurilmalar** (`buildDeviceList()`): uzun matn bloklari o'rniga xulosa-sarlavha +
+   har qurilmaga 1 ta tugma. Broadcast qurilma tanlash alohida `devtarget` ekraniga ko'chirildi.
+4. ✅ **Yangi asosiy menyu** (`mainKeyboard`): ✉️ Ommaviy SMS / 📊 Holat · 🧪 Test SMS /
+   📱 Qurilmalar · 📂 Kontaktlar / 🌙 Tungi rejim · 🗑️ Tozalash. `controlKeyboard()`=mainKeyboard().
+5. ✅ Broadcast boshlangach darhol HOLAT kartasi ko'rsatiladi (jarayonni shu yerdan kuzatish).
+
+## v0.4.0 (app + server, deploy qilingan 2026-06-16)
 **UI/dizayn yangilanishi.** latest_code=6.
 1. ✅ **Launcher icon tuzatildi** (avval hamma telefonda oppoq edi — manifest `android:icon` to'g'ridan
    to'g'ri `ic_launcher_foreground` (orqa fonsiz oq vektor) ga ishora qilardi). Endi to'liq adaptive

@@ -12,6 +12,7 @@ server-backup-*/
 # webhook.php yaratadigan holat fayllari
 broadcast_state.txt
 broadcast_config.json
+broadcast_batch.json
 night_mode.json
 smart_break.txt
 error_streak.txt
