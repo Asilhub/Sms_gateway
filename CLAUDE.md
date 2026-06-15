@@ -32,6 +32,15 @@ Ta'lim kompaniyasi (idrokedu.uz) o'z kontaktlariga ommaviy SMS yuborish uchun is
 3. ✅ SIM tanlash: `get_task` javobidagi `sim_slot` (optInt) ga qarab SubscriptionManager.
 4. ✅ Ketma-ket 5+ xato → `haltSimExhausted()` (to'xtaydi, admin'ga xabar).
 
+## v0.2.0 (app + server, deploy qilingan) — joriy
+- App: force-update endi APK'ni DownloadManager bilan yuklab, FileProvider orqali o'zi o'rnatadi
+  (`MainActivity.startAppUpdate/installUpdate`). Manifest: REQUEST_INSTALL_PACKAGES + FileProvider
+  (`res/xml/file_paths.xml`).
+- App→server: heartbeat'da `app`=versionCode yuboradi. Server `devices.app_version` saqlaydi,
+  bot qurilma sahifasida "📦 Ilova: yangi/eski (code N)" ko'rsatadi. latest_code=4.
+- Yangi versiya chiqarganda: build.gradle versionCode++, webhook.php `version` endpoint
+  latest_code/name yangilash, APK ni serverga (SmsGateway.apk) yuklash.
+
 ## v0.1.0 (app + server, deploy qilingan)
 1. ✅ API kalit APK ichida YO'Q — `ApiClient.apiKey` prefs'dan, foydalanuvchi kiritadi
    (MainActivity `showKeyDialog`). Server URL faqat BuildConfig'da.

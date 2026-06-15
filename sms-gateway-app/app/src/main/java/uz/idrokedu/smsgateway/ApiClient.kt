@@ -57,7 +57,7 @@ object ApiClient {
     }
 
     fun heartbeat(deviceId: String): Boolean =
-        call(mapOf("action" to "heartbeat"), deviceId) != null
+        call(mapOf("action" to "heartbeat", "app" to BuildConfig.VERSION_CODE.toString()), deviceId) != null
 
     fun getTask(deviceId: String): JSONObject? =
         call(mapOf("action" to "get_task"), deviceId)

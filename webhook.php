@@ -78,6 +78,12 @@ try {
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )");
 
+    // Ilova versiyasi ustuni (qaysi telefon yangilangan/eski ekanini bilish uchun)
+    $dcols = $db->query("PRAGMA table_info(devices)")->fetchAll(PDO::FETCH_COLUMN, 1);
+    if (!in_array('app_version', $dcols)) {
+        $db->exec("ALTER TABLE devices ADD COLUMN app_version INTEGER DEFAULT 0");
+    }
+
 }
 catch (PDOException $e) {
     die("DB Error: " . $e->getMessage());
@@ -121,6 +127,11 @@ function updateHeartbeat($device_id)
     if (!$device_id)
         return;
     registerDevice($device_id);
+    // Ilova o'z versiyasini (versionCode) yuborsa — saqlaymiz
+    if (isset($_GET['app'])) {
+        $db->prepare("UPDATE devices SET app_version=? WHERE device_id=?")
+            ->execute([(int)$_GET['app'], $device_id]);
+    }
 }
 
 function getOnlineDevices()
@@ -460,8 +471,8 @@ if (isset($_GET['action'])) {
     if ($action == 'version') {
         echo json_encode([
             "status"      => "ok",
-            "latest_code" => 3,            // app versionCode
-            "latest_name" => "0.1.0",      // app versionName
+            "latest_code" => 4,            // app versionCode
+            "latest_name" => "0.2.0",      // app versionName
             "url"         => "https://sms.idrokedu.uz/SmsGateway.apk",
             "force"       => true
         ]);
@@ -1009,6 +1020,8 @@ if (isset($update['callback_query'])) {
         $icon = ($dev['is_active'] && isDeviceOnline($dev)) ? "🟢 ONLINE" : ($dev['is_active'] ? "🟡 OFFLINE" : "🔴 O'CHIRILGAN");
         $name = $dev['name'] ?: $dev['device_id'];
         $simText = $dev['sim_slot'] == 0 ? "Default" : "SIM " . $dev['sim_slot'];
+        $appv = (int)($dev['app_version'] ?? 0);
+        $appText = $appv >= 4 ? "✅ yangi (code $appv)" : ($appv > 0 ? "⚠️ eski (code $appv)" : "❓ noma'lum");
         $total = $dev['tasks_sent'] + $dev['tasks_failed'];
         $rate = $total > 0 ? round($dev['tasks_sent'] / $total * 100) : 0;
 
@@ -1016,6 +1029,7 @@ if (isset($update['callback_query'])) {
         $msg .= "🆔 ID: <code>{$dev['device_id']}</code>\n";
         $msg .= "📶 Holat: <b>$icon</b>\n";
         $msg .= "📡 SIM: <b>$simText</b>\n";
+        $msg .= "📦 Ilova: <b>$appText</b>\n";
         $msg .= "⏱ Oxirgi signal: " . getLastSeenText($dev['last_seen']) . "\n\n";
         $msg .= "📊 <b>Statistika:</b>\n";
         $msg .= "✅ Yuborildi: <b>{$dev['tasks_sent']}</b>\n";

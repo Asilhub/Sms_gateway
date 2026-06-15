@@ -97,6 +97,12 @@ kontaktlar, tungi rejim). Kontaktlar `.txt`/`.csv` fayl tashlab qo'shiladi.
 `sms.db`, `broadcast_state.txt`, `broadcast_config.json`, `night_mode.json`,
 `smart_break.txt`, `error_streak.txt`, `pending_msg_*.txt`, `status_*.txt`.
 
+## O'zgarishlar (v0.2.0)
+- ✅ **To'liq avtomatik yangilanish** — "Yangilash" bosilganda ilova APK'ni o'zi yuklab,
+  o'zi o'rnatadi (DownloadManager + FileProvider). Brauzer fallback bor.
+- ✅ **Versiya hisoboti** — har telefon heartbeat'da `app` (versionCode) yuboradi; bot
+  qurilma sahifasida "📦 Ilova: yangi/eski" ko'rsatadi (kim yangilangan-yo'qligini bilish uchun).
+
 ## O'zgarishlar (v0.1.0)
 - ✅ **API kalit APK ichida emas** — foydalanuvchi qo'lda kiritadi (decompile qilsa ham sir yo'q).
 - ✅ **Majburiy yangilanish** — ilova `action=version` ni tekshiradi; eski bo'lsa yopiq dialog

@@ -1,11 +1,16 @@
 package uz.idrokedu.smsgateway
 
 import android.Manifest
+import android.app.DownloadManager
+import android.content.BroadcastReceiver
+import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.Environment
 import android.os.PowerManager
 import android.provider.Settings
 import android.widget.EditText
@@ -16,7 +21,9 @@ import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import androidx.core.content.FileProvider
 import com.google.android.material.button.MaterialButton
+import java.io.File
 
 class MainActivity : AppCompatActivity() {
 
@@ -33,6 +40,8 @@ class MainActivity : AppCompatActivity() {
     private val maxLogLines = 100
 
     private var updateDialog: AlertDialog? = null
+    private var downloadReceiver: BroadcastReceiver? = null
+    private val updateApkName = "SmsGateway-update.apk"
 
     private val requiredPermissions = mutableListOf(
         Manifest.permission.SEND_SMS,
@@ -173,12 +182,80 @@ class MainActivity : AppCompatActivity() {
             .setTitle("⬆️ Yangilanish")
             .setMessage(msg)
             .setCancelable(!force)
-            .setPositiveButton("Yangilash") { _, _ ->
-                try { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) } catch (_: Exception) {}
-            }
+            .setPositiveButton("Yangilash") { _, _ -> startAppUpdate(url) }
         if (!force) b.setNegativeButton("Keyinroq", null)
         updateDialog = b.create()
         updateDialog?.show()
+    }
+
+    /** APK'ni ilovaning o'zi yuklab oladi va o'rnatish oynasini ochadi. */
+    private fun startAppUpdate(url: String) {
+        try {
+            // Android 8+ da "noma'lum manbalar"ga ruxsat kerak
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
+                !packageManager.canRequestPackageInstalls()) {
+                appendLog("⚙️ 'Noma'lum manbalar'ga ruxsat bering, so'ng qayta 'Yangilash'")
+                try {
+                    startActivity(
+                        Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:$packageName"))
+                    )
+                } catch (_: Exception) {}
+                return
+            }
+
+            val target = File(getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS), updateApkName)
+            if (target.exists()) target.delete()
+
+            val dm = getSystemService(DOWNLOAD_SERVICE) as DownloadManager
+            val req = DownloadManager.Request(Uri.parse(url))
+                .setTitle("SMS Gateway yangilanishi")
+                .setDestinationInExternalFilesDir(this, Environment.DIRECTORY_DOWNLOADS, updateApkName)
+                .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+            val id = dm.enqueue(req)
+            appendLog("⬇️ Yangilanish yuklanmoqda...")
+            registerDownloadReceiver(id)
+        } catch (e: Exception) {
+            // Fallback: brauzerda ochish
+            try { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) } catch (_: Exception) {}
+        }
+    }
+
+    private fun registerDownloadReceiver(id: Long) {
+        downloadReceiver?.let { try { unregisterReceiver(it) } catch (_: Exception) {} }
+        downloadReceiver = object : BroadcastReceiver() {
+            override fun onReceive(c: Context?, i: Intent?) {
+                val got = i?.getLongExtra(DownloadManager.EXTRA_DOWNLOAD_ID, -1L) ?: -1L
+                if (got != id) return
+                try { unregisterReceiver(this) } catch (_: Exception) {}
+                downloadReceiver = null
+                installUpdate()
+            }
+        }
+        ContextCompat.registerReceiver(
+            this, downloadReceiver!!,
+            IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE),
+            ContextCompat.RECEIVER_EXPORTED
+        )
+    }
+
+    private fun installUpdate() {
+        try {
+            val file = File(getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS), updateApkName)
+            if (!file.exists()) { appendLog("⚠️ Yangilanish fayli topilmadi"); return }
+            val uri = FileProvider.getUriForFile(this, "$packageName.fileprovider", file)
+            val intent = Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(uri, "application/vnd.android.package-archive")
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            startActivity(intent)
+        } catch (e: Exception) {
+            appendLog("⚠️ O'rnatishda xato: ${e.message}")
+        }
+    }
+
+    override fun onDestroy() {
+        downloadReceiver?.let { try { unregisterReceiver(it) } catch (_: Exception) {} }
+        super.onDestroy()
     }
 
     // ---- WORKER / RUXSATLAR ----
