@@ -41,7 +41,17 @@ Ta'lim kompaniyasi (idrokedu.uz) o'z kontaktlariga ommaviy SMS yuborish uchun is
 - Yangi versiya chiqarganda: build.gradle versionCode++, webhook.php `version` endpoint
   latest_code/name yangilash, APK ni serverga (SmsGateway.apk) yuklash.
 
-## Bot UI yangilanishi (server, deploy qilingan 2026-06-16) — joriy
+## v0.5.0 (app + server, deploy 2026-06-16) — joriy. latest_code=7
+1. ✅ **Takror qurilma muammosi**: device_id endi BARQAROR — `ANDROID_ID` hash'idan
+   (`generateDeviceId()` MainActivity + `SmsWorkerService.loadDeviceId()`). Qayta o'rnatishda
+   ham bir xil ID → botda dubl chiqmaydi. Mavjud prefs ID saqlanadi (churn yo'q).
+2. ✅ **Bot: oflayn qurilmalarni tozalash** — qurilmalar ro'yxatida "🧹 Oflaynlarni o'chirish (N)"
+   tugmasi (`dev_clean_offline`, last_seen<90s o'chiradi). Onlayn telefon teginilmaydi.
+3. ✅ **Bot: "Teng bo'lib" tushuntirildi** — `devtarget` va broadcast qurilma-tanlash ekranlarida
+   izoh ("har kontakt 1 marta oladi, bu 10 raqamdan yuborish EMAS"). Round-robin/target faqat
+   2+ qurilma bo'lsa ko'rsatiladi (1 telefonda yashiriladi).
+
+## Bot UI yangilanishi (server, deploy qilingan 2026-06-16)
 Telegram bot UX qayta ishlandi (faqat `webhook.php`):
 1. ✅ **Jonli HOLAT dashboard** (`buildDashboard()`): progress-bar (█░ %), holat, onlayn qurilmalar,
    joriy partiya ✅/❌/⏳. Inline tugmalar: ⏸ Pauza / ▶️ Davom / 🔄 Yangilash / 🛑 To'xtatish

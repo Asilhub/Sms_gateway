@@ -83,10 +83,7 @@ class MainActivity : AppCompatActivity() {
         val prefs = getSharedPreferences("sms_gateway", MODE_PRIVATE)
         var savedId = prefs.getString("device_id", null)
         if (savedId == null) {
-            val brand = Build.BRAND.lowercase().replace(" ", "_")
-            val model = Build.MODEL.lowercase().replace(" ", "_")
-            val rand = (1000..9999).random()
-            savedId = "${brand}_${model}_$rand"
+            savedId = generateDeviceId()
             prefs.edit().putString("device_id", savedId).apply()
         }
         deviceId = savedId
@@ -132,6 +129,22 @@ class MainActivity : AppCompatActivity() {
         }
         updateUI()
         checkForUpdate()
+    }
+
+    /**
+     * Barqaror qurilma ID si: ANDROID_ID asosida — qayta o'rnatishda ham bir xil qoladi,
+     * shuning uchun botda takror qurilma paydo bo'lmaydi. Mavjud ID saqlanib qoladi.
+     */
+    private fun generateDeviceId(): String {
+        val brand = Build.BRAND.lowercase().replace(" ", "_")
+        val model = Build.MODEL.lowercase().replace(" ", "_")
+        val androidId = try {
+            Settings.Secure.getString(contentResolver, Settings.Secure.ANDROID_ID) ?: ""
+        } catch (_: Exception) { "" }
+        val suffix = if (androidId.isNotBlank())
+            Integer.toHexString(androidId.hashCode()).takeLast(6)
+        else (1000..9999).random().toString()
+        return "${brand}_${model}_$suffix"
     }
 
     // ---- API KALIT ----

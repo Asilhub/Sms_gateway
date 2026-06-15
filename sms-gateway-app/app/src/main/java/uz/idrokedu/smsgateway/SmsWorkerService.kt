@@ -8,6 +8,7 @@ import android.content.IntentFilter
 import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
+import android.provider.Settings
 import android.telephony.SmsManager
 import android.telephony.SubscriptionManager
 import android.util.Log
@@ -289,10 +290,16 @@ class SmsWorkerService : Service() {
         val prefs = getSharedPreferences("sms_gateway", MODE_PRIVATE)
         var id = prefs.getString("device_id", null)
         if (id == null) {
+            // Barqaror ID — MainActivity bilan bir xil mantiq (ANDROID_ID asosida)
             val brand = Build.BRAND.lowercase().replace(" ", "_")
             val model = Build.MODEL.lowercase().replace(" ", "_")
-            val rand = (1000..9999).random()
-            id = "${brand}_${model}_$rand"
+            val androidId = try {
+                Settings.Secure.getString(contentResolver, Settings.Secure.ANDROID_ID) ?: ""
+            } catch (_: Exception) { "" }
+            val suffix = if (androidId.isNotBlank())
+                Integer.toHexString(androidId.hashCode()).takeLast(6)
+            else (1000..9999).random().toString()
+            id = "${brand}_${model}_$suffix"
             prefs.edit().putString("device_id", id).apply()
         }
         return id

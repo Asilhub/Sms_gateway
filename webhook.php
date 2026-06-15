@@ -427,41 +427,51 @@ function buildDeviceList()
         return ['text' => "📱 <b>QURILMALAR</b>\n\nHech qanday qurilma ulanmagan.\n\n<i>Ilovani telefonda ishga tushiring — qurilma avtomatik ro'yxatga olinadi.</i>", 'kb' => null];
 
     $online = 0;
+    $offline = 0;
     $sentSum = 0;
     $failSum = 0;
     foreach ($devices as $d) {
-        if ($d['is_active'] && isDeviceOnline($d))
+        if (isDeviceOnline($d))
             $online++;
+        else
+            $offline++;
         $sentSum += (int)$d['tasks_sent'];
         $failSum += (int)$d['tasks_failed'];
     }
     $total = count($devices);
 
     $msg = "📱 <b>QURILMALAR</b>\n\n";
-    $msg .= "🟢 Onlayn: <b>$online / $total</b>\n";
+    $msg .= "🟢 Onlayn: <b>$online</b>" . ($offline ? " · 🔴 Oflayn: <b>$offline</b>" : "") . "\n";
     $msg .= "✅ Jami yuborildi: <b>$sentSum</b> · ❌ <b>$failSum</b>\n\n";
     $msg .= "<i>Boshqarish uchun qurilmani tanlang</i> 👇";
 
     $buttons = [];
     foreach ($devices as $d) {
-        $icon = ($d['is_active'] && isDeviceOnline($d)) ? "🟢" : ($d['is_active'] ? "🟡" : "🔴");
+        $icon = ($d['is_active'] && isDeviceOnline($d)) ? "🟢" : ($d['is_active'] ? "🔴" : "⛔");
         $name = $d['name'] ?: $d['device_id'];
         if (mb_strlen($name, 'UTF-8') > 20)
             $name = mb_substr($name, 0, 20, 'UTF-8');
         $buttons[] = [['text' => "$icon $name · {$d['tasks_sent']}✓", 'callback_data' => "dev_" . $d['device_id']]];
     }
 
-    $conf = getBroadcastConfig();
-    $dm = $conf['device_mode'] ?? 'all';
-    if ($dm == 'all')
-        $dmText = "Hammasi";
-    elseif ($dm == 'round_robin')
-        $dmText = "Teng taqsimlash";
-    else {
-        $dev = getDevice($dm);
-        $dmText = $dev ? ($dev['name'] ?: $dev['device_id']) : $dm;
+    // Oflayn (eski/takror) qurilmalarni bitta tugma bilan tozalash
+    if ($offline > 0)
+        $buttons[] = [['text' => "🧹 Oflaynlarni o'chirish ($offline)", 'callback_data' => "dev_clean_offline"]];
+
+    // Yuborish qurilmasini tanlash faqat bir nechta qurilma bo'lsa kerak
+    if ($total >= 2) {
+        $conf = getBroadcastConfig();
+        $dm = $conf['device_mode'] ?? 'all';
+        if ($dm == 'all')
+            $dmText = "Hammasi";
+        elseif ($dm == 'round_robin')
+            $dmText = "Teng bo'lib";
+        else {
+            $dev = getDevice($dm);
+            $dmText = $dev ? ($dev['name'] ?: $dev['device_id']) : $dm;
+        }
+        $buttons[] = [['text' => "🎯 Yuborish qurilmasi: $dmText", 'callback_data' => "devtarget"]];
     }
-    $buttons[] = [['text' => "🎯 Yuborish qurilmasi: $dmText", 'callback_data' => "devtarget"]];
 
     return ['text' => $msg, 'kb' => ['inline_keyboard' => $buttons]];
 }
@@ -643,8 +653,8 @@ if (isset($_GET['action'])) {
     if ($action == 'version') {
         echo json_encode([
             "status"      => "ok",
-            "latest_code" => 6,            // app versionCode
-            "latest_name" => "0.4.0",      // app versionName
+            "latest_code" => 7,            // app versionCode
+            "latest_name" => "0.5.0",      // app versionName
             "url"         => "https://sms.idrokedu.uz/SmsGateway.apk",
             "force"       => true
         ]);
@@ -909,18 +919,21 @@ if (isset($update['callback_query'])) {
         $devices = getAllDevices();
         $dev_buttons = [];
         $dev_buttons[] = [
-            ['text' => "📱 Hammasi (barcha qurilma)", 'callback_data' => "bcast_dev_all_" . $parts[2]],
+            ['text' => "📱 Hammasi (barcha telefon)", 'callback_data' => "bcast_dev_all_" . $parts[2]],
         ];
-        $dev_buttons[] = [
-            ['text' => "🔄 Teng taqsimlash", 'callback_data' => "bcast_dev_rr_" . $parts[2]],
-        ];
-
-        foreach ($devices as $d) {
-            $icon = isDeviceOnline($d) ? "🟢" : "🔴";
-            $name = $d['name'] ?: $d['device_id'];
+        // "Teng bo'lib" va alohida telefon tanlash faqat bir nechta qurilma bo'lsa kerak
+        $multi = count($devices) >= 2;
+        if ($multi) {
             $dev_buttons[] = [
-                ['text' => "$icon $name", 'callback_data' => "bcast_dev_" . $d['device_id'] . "_" . $parts[2]]
+                ['text' => "🔄 Teng bo'lib (har telefonga teng)", 'callback_data' => "bcast_dev_rr_" . $parts[2]],
             ];
+            foreach ($devices as $d) {
+                $icon = isDeviceOnline($d) ? "🟢" : "🔴";
+                $name = $d['name'] ?: $d['device_id'];
+                $dev_buttons[] = [
+                    ['text' => "$icon $name", 'callback_data' => "bcast_dev_" . $d['device_id'] . "_" . $parts[2]]
+                ];
+            }
         }
 
         $dev_buttons[] = [['text' => "❌ Bekor qilish", 'callback_data' => "cancel_broadcast"]];
@@ -928,11 +941,12 @@ if (isset($update['callback_query'])) {
         $count = $db->query("SELECT COUNT(*) FROM contacts")->fetchColumn();
         $preview = mb_strlen($message, 'UTF-8') > 80 ? mb_substr($message, 0, 80, 'UTF-8') . "..." : $message;
 
-        $msg = "📱 <b>QURILMA TANLANG</b>\n\n";
+        $msg = "📱 <b>QAYSI TELEFONDAN?</b>\n\n";
         $msg .= "📝 Xabar: <code>" . e($preview) . "</code>\n";
         $msg .= "👥 Qabul qiluvchilar: <b>$count</b> ta\n";
-        $msg .= "🔄 Tartib: <b>" . getModeTextShort($mode) . "</b>\n\n";
-        $msg .= "Qaysi qurilmadan yuborilsin?";
+        $msg .= "🔄 Tartib: <b>" . getModeTextShort($mode) . "</b>\n";
+        if ($multi)
+            $msg .= "\nℹ️ <i>Har kontakt 1 marta oladi. \"Teng bo'lib\" = ro'yxat telefonlarga teng bo'linadi.</i>";
 
         deleteMessage($chat_id, $msg_id);
         sendMessage($chat_id, $msg, ['inline_keyboard' => $dev_buttons], "HTML");
@@ -1129,13 +1143,25 @@ if (isset($update['callback_query'])) {
         exit;
     }
 
+    // ---- OFLAYN (eski/takror) QURILMALARNI O'CHIRISH ----
+    if ($data == "dev_clean_offline") {
+        $cutoff = time() - 90;
+        $del = $db->prepare("DELETE FROM devices WHERE last_seen < ?");
+        $del->execute([$cutoff]);
+        $n = $del->rowCount();
+        $dl = buildDeviceList();
+        editMessage($chat_id, $msg_id, $dl['text'], $dl['kb'], "HTML");
+        answerCallback($cb['id'], "🧹 $n ta oflayn qurilma o'chirildi");
+        exit;
+    }
+
     // ---- BROADCAST QURILMA TANLASH (jonli) ----
     if ($data == "devtarget") {
         $devices = getAllDevices();
         $rows = [];
         $rows[] = [
             ['text' => "📱 Hammasi", 'callback_data' => "devmode_all"],
-            ['text' => "🔄 Teng taqsimlash", 'callback_data' => "devmode_round_robin"]
+            ['text' => "🔄 Teng bo'lib", 'callback_data' => "devmode_round_robin"]
         ];
         foreach ($devices as $d) {
             $icon = isDeviceOnline($d) ? "🟢" : "🔴";
@@ -1143,7 +1169,12 @@ if (isset($update['callback_query'])) {
             $rows[] = [['text' => "$icon $name", 'callback_data' => "devmode_" . $d['device_id']]];
         }
         $rows[] = [['text' => "🔙 Ortga", 'callback_data' => "dev_list"]];
-        editMessage($chat_id, $msg_id, "🎯 <b>Yuborish qurilmasi</b>\n\nOmmaviy SMS qaysi qurilma(lar)dan ketsin?", ['inline_keyboard' => $rows], "HTML");
+        $txt = "🎯 <b>Yuborish qurilmasi</b>\n\n"
+            . "📱 <b>Hammasi</b> — barcha onlayn telefonlar birga yuboradi (eng tez). Tavsiya etiladi.\n\n"
+            . "🔄 <b>Teng bo'lib</b> — kontaktlar telefonlarga teng bo'linadi (har bir telefon teng miqdorda yuboradi).\n\n"
+            . "Yoki faqat bitta telefonni tanlang.\n\n"
+            . "ℹ️ <i>Har bir kontakt baribir faqat 1 marta SMS oladi — bu \"bitta odamga 10 raqamdan yuborish\" emas.</i>";
+        editMessage($chat_id, $msg_id, $txt, ['inline_keyboard' => $rows], "HTML");
         answerCallback($cb['id'], "🎯 Tanlang");
         exit;
     }
