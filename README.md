@@ -122,7 +122,7 @@ Asosiy menyu: **✉️ Ommaviy SMS** (broadcast), **📊 Holat**, **🧪 Test SM
 ## O'zgarishlar (v0.3.0)
 - ✅ **Emoji tuzatildi** — emoji-li SMS to'g'ri yetkaziladi (server `JSON_UNESCAPED_UNICODE` + `charset=utf-8`).
 - ✅ **160 → 800 belgi** — uzun matn bir nechta SMS (multipart) sifatida ketadi; bot SMS sonini ko'rsatadi.
-- ✅ **Eski `1206` kaliti olib tashlandi** — endi faqat asosiy API kalit ishlaydi.
+- ✅ **Eski vaqtinchalik kalit olib tashlandi** — endi faqat asosiy API kalit ishlaydi.
 - ✅ Ilova: ekranda versiya, qo'lda yangilanish tekshirish.
 
 ## O'zgarishlar (v0.2.0)

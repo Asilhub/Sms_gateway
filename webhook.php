@@ -484,7 +484,7 @@ function mainKeyboard()
             [['text' => "✉️ Ommaviy SMS"]],
             [['text' => "📊 Holat"], ['text' => "🧪 Test SMS"]],
             [['text' => "📱 Qurilmalar"], ['text' => "📂 Kontaktlar"]],
-            [['text' => "🌙 Tungi rejim"], ['text' => "🗑️ Tozalash"]]
+            [['text' => "🌙 Tungi rejim"], ['text' => "🔌 API"], ['text' => "🗑️ Tozalash"]]
         ], 'resize_keyboard' => true];
 }
 
@@ -654,7 +654,7 @@ if (isset($_GET['action'])) {
 
     // Key tekshirish. Faqat 'version' kalitsiz (majburiy yangilanishni kalit kiritishdan
     // oldin ham tekshirish uchun). 'heartbeat' ham endi haqiqiy kalit talab qiladi —
-    // shuning uchun eski/o'chirilgan kalitli (masalan 1206) telefon umuman ulanolmaydi.
+    // shuning uchun eski/o'chirilgan kalitli telefon umuman ulanolmaydi.
     if (!keyValid($key) && $action !== 'version') {
         http_response_code(401);
         echo json_encode(["status" => "error", "message" => "Unauthorized"]);
@@ -1437,6 +1437,21 @@ if (isset($update['message'])) {
     elseif ($text == "📊 Holat" || $text == "📡 Status") {
         $dash = buildDashboard();
         sendMessage($chat_id, $dash['text'], $dash['kb'], "HTML");
+    }
+
+    // ---- API (CRM integratsiya) ----
+    elseif ($text == "🔌 API") {
+        global $api_key;
+        $base = "https://sms.idrokedu.uz/webhook.php";
+        $msg  = "🔌 <b>API — CRM integratsiya</b>\n\n";
+        $msg .= "🌐 Manzil:\n<code>$base</code>\n\n";
+        $msg .= "🔑 API kalit (bosib nusxalang):\n<code>" . e($api_key) . "</code>\n\n";
+        $msg .= "📨 <b>SMS yuborish:</b>\n<code>$base?action=send&amp;key=KALIT&amp;phone=+998901234567&amp;text=Salom</code>\n\n";
+        $msg .= "🔍 <b>Holat (id bo'yicha):</b>\n<code>$base?action=check_status&amp;key=KALIT&amp;id=123</code>\n\n";
+        $msg .= "📊 <b>Statistika:</b>\n<code>$base?action=stats&amp;key=KALIT</code>  <i>(qurilmalar: &amp;devices=1)</i>\n\n";
+        $msg .= "ℹ️ <i>phone va text ni URL-encode qiling. <code>send</code> javobi: <code>{\"status\":\"ok\",\"id\":N}</code>.</i>\n\n";
+        $msg .= "⚠️ <b>Kalitni hech kimga bermang</b> — u bilan SMS yuborish mumkin.";
+        sendMessage($chat_id, $msg, mainKeyboard(), "HTML");
     }
 
     // ---- KONTAKTLAR ----

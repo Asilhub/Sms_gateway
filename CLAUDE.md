@@ -43,7 +43,7 @@ Ta'lim kompaniyasi (idrokedu.uz) o'z kontaktlariga ommaviy SMS yuborish uchun is
 
 ## Xavfsizlik: heartbeat endi kalit talab qiladi (server, deploy 2026-06-16) — joriy
 - `webhook.php` device API: faqat `version` kalitsiz. Avval `heartbeat` ham kalitsiz edi —
-  shuning uchun o'chirilgan kalitli (1206) eski telefon `get_task` qilolmasa ham heartbeat
+  shuning uchun o'chirilgan kalitli eski telefon `get_task` qilolmasa ham heartbeat
   yuborib "onlayn" ko'rinardi. Endi `heartbeat` ham `keyValid()` talab qiladi → eski/yaroqsiz
   kalitli qurilma umuman ulanolmaydi (401) va ro'yxatga tushmaydi.
 - `stats` API'ga `?devices=1` qo'shildi (diagnostika: qurilma id/online/last_seen/app).
@@ -92,7 +92,7 @@ Telegram bot UX qayta ishlandi (faqat `webhook.php`):
    xom UTF-8 sifatida ketadi — ilovada buzilmaydi. (Ildiz sabab: kirilcha ishlardi, emoji yo'q.)
 2. ✅ **160 limit → 800**: Broadcast `WAIT_FOR_MSG` da limit 800 belgiga ko'tarildi; `smsSegments()`
    helper GSM-7/UCS-2 ga qarab necha SMS ketishini ko'rsatadi (uzun matn = multipart).
-3. ✅ **`1206` o'chirildi**: server `config.php` `api_keys` da faqat asosiy kalit qoldi. Eski
+3. ✅ **Eski kalit o'chirildi**: server `config.php` `api_keys` da faqat asosiy kalit qoldi. Eski
    kalit endi 403. (Eski/v0.0.1 telefonlar ishlamay qoladi — qo'lda v0.3.0 o'rnatish kerak.)
 4. ✅ App: qurilma satrida `v0.3.0`, bosib qo'lda yangilanish tekshirish. latest_code=5.
 
@@ -105,5 +105,5 @@ Telegram bot UX qayta ishlandi (faqat `webhook.php`):
 3. ✅ Server: get_task `sim_slot`, ko'p kalit (`api_keys`), `.htaccess` (db-wal/config.php) — deploy qilingan.
 
 ## Hal qilinmagan (kelajakdagi ish)
-1. Eski (v0.0.1 / 1206 kalitdagi) telefonlar endi ishlamaydi — bir marta qo'lda v0.3.0 o'rnatish kerak.
+1. Eski (v0.0.1 / eski kalitdagi) telefonlar endi ishlamaydi — bir marta qo'lda v0.3.0 o'rnatish kerak.
    v0.1.0+ telefonlar majburiy-yangilanish orqali o'zi o'tadi (force-update).
