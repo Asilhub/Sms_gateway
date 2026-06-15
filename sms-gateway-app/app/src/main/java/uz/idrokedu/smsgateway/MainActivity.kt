@@ -3,6 +3,8 @@ package uz.idrokedu.smsgateway
 import android.Manifest
 import android.app.DownloadManager
 import android.content.BroadcastReceiver
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
@@ -15,8 +17,10 @@ import android.os.PowerManager
 import android.provider.Settings
 import android.widget.EditText
 import android.widget.FrameLayout
+import android.widget.ImageButton
 import android.widget.ScrollView
 import android.widget.TextView
+import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
@@ -28,13 +32,17 @@ import java.io.File
 class MainActivity : AppCompatActivity() {
 
     private lateinit var tvStatus: TextView
-    private lateinit var tvStats: TextView
+    private lateinit var tvSent: TextView
+    private lateinit var tvFailed: TextView
     private lateinit var tvLastAction: TextView
     private lateinit var tvDeviceId: TextView
     private lateinit var tvLog: TextView
     private lateinit var scrollLog: ScrollView
     private lateinit var btnToggle: MaterialButton
+    private lateinit var btnSettings: ImageButton
     private lateinit var statusDot: android.view.View
+
+    private var deviceId: String = ""
 
     private val logLines = mutableListOf<String>()
     private val maxLogLines = 100
@@ -59,34 +67,35 @@ class MainActivity : AppCompatActivity() {
         setContentView(R.layout.activity_main)
 
         tvStatus = findViewById(R.id.tvStatus)
-        tvStats = findViewById(R.id.tvStats)
+        tvSent = findViewById(R.id.tvSent)
+        tvFailed = findViewById(R.id.tvFailed)
         tvLastAction = findViewById(R.id.tvLastAction)
         tvDeviceId = findViewById(R.id.tvDeviceId)
         tvLog = findViewById(R.id.tvLog)
         scrollLog = findViewById(R.id.scrollLog)
         btnToggle = findViewById(R.id.btnToggle)
+        btnSettings = findViewById(R.id.btnSettings)
         statusDot = findViewById(R.id.statusDot)
 
         ApiClient.init(this)
 
         // Device ID
         val prefs = getSharedPreferences("sms_gateway", MODE_PRIVATE)
-        var deviceId = prefs.getString("device_id", null)
-        if (deviceId == null) {
+        var savedId = prefs.getString("device_id", null)
+        if (savedId == null) {
             val brand = Build.BRAND.lowercase().replace(" ", "_")
             val model = Build.MODEL.lowercase().replace(" ", "_")
             val rand = (1000..9999).random()
-            deviceId = "${brand}_${model}_$rand"
-            prefs.edit().putString("device_id", deviceId).apply()
+            savedId = "${brand}_${model}_$rand"
+            prefs.edit().putString("device_id", savedId).apply()
         }
+        deviceId = savedId
         tvDeviceId.text = "Qurilma: $deviceId  •  v${BuildConfig.VERSION_NAME}"
-        // Uzoq bosib API kalitni o'zgartirish mumkin
+        // Uzoq bosib API kalitni o'zgartirish (tezkor yo'l)
         tvDeviceId.setOnLongClickListener { showKeyDialog(); true }
-        // Bosib qo'lda yangilanish tekshirish
-        tvDeviceId.setOnClickListener {
-            appendLog("🔄 Yangilanish tekshirilmoqda...")
-            checkForUpdate(manual = true)
-        }
+
+        // Sozlamalar menyusi
+        btnSettings.setOnClickListener { showSettingsMenu() }
 
         // Log callback
         SmsWorkerService.onLogUpdate = { line ->
@@ -160,6 +169,84 @@ class MainActivity : AppCompatActivity() {
                 }
             }
             .setNegativeButton("Bekor", null)
+            .show()
+    }
+
+    // ---- SOZLAMALAR MENYUSI ----
+
+    private fun showSettingsMenu() {
+        val items = arrayOf(
+            "🔑  API kalitni o'zgartirish",
+            "🔄  Yangilanishni tekshirish",
+            "🔋  Batareya optimizatsiyasi",
+            "🔔  Bildirishnoma sozlamalari",
+            "📋  Qurilma ID nusxalash",
+            "🧹  Jurnalni tozalash",
+            "ℹ️  Ilova haqida"
+        )
+        AlertDialog.Builder(this)
+            .setTitle("⚙️ Sozlamalar")
+            .setItems(items) { _, which ->
+                when (which) {
+                    0 -> showKeyDialog()
+                    1 -> { appendLog("🔄 Yangilanish tekshirilmoqda..."); checkForUpdate(manual = true) }
+                    2 -> openBatterySettings()
+                    3 -> openNotificationSettings()
+                    4 -> copyDeviceId()
+                    5 -> clearLog()
+                    6 -> showAbout()
+                }
+            }
+            .setNegativeButton("Yopish", null)
+            .show()
+    }
+
+    private fun openBatterySettings() {
+        try {
+            startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
+        } catch (_: Exception) {
+            requestBatteryOptimization()
+        }
+    }
+
+    private fun openNotificationSettings() {
+        try {
+            val intent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                    .putExtra(Settings.EXTRA_APP_PACKAGE, packageName)
+            } else {
+                Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
+                    .setData(Uri.parse("package:$packageName"))
+            }
+            startActivity(intent)
+        } catch (_: Exception) {
+            Toast.makeText(this, "Ochib bo'lmadi", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun copyDeviceId() {
+        val cm = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
+        cm.setPrimaryClip(ClipData.newPlainText("device_id", deviceId))
+        Toast.makeText(this, "Qurilma ID nusxalandi", Toast.LENGTH_SHORT).show()
+    }
+
+    private fun clearLog() {
+        logLines.clear()
+        tvLog.text = "Tayyor..."
+    }
+
+    private fun showAbout() {
+        val keyState = if (ApiClient.hasKey()) "kiritilgan ✅" else "yo'q ❌"
+        val msg = "📱 SMS Gateway\n\n" +
+            "Versiya: v${BuildConfig.VERSION_NAME} (kod ${BuildConfig.VERSION_CODE})\n" +
+            "Qurilma: $deviceId\n" +
+            "API kalit: $keyState\n\n" +
+            "Telefonni SMS shlyuziga aylantiradi. Server bilan avtomatik bog'lanadi va " +
+            "yangi versiya chiqsa o'zi yangilanadi."
+        AlertDialog.Builder(this)
+            .setTitle("ℹ️ Ilova haqida")
+            .setMessage(msg)
+            .setPositiveButton("Yopish", null)
             .show()
     }
 
@@ -343,15 +430,24 @@ class MainActivity : AppCompatActivity() {
         if (SmsWorkerService.isRunning) {
             tvStatus.text = "Ishlamoqda"
             statusDot.setBackgroundResource(R.drawable.dot_green)
-            btnToggle.text = "⏹  TO'XTATISH"
-            btnToggle.setBackgroundColor(ContextCompat.getColor(this, android.R.color.holo_red_dark))
+            btnToggle.text = "TO'XTATISH"
+            btnToggle.setIconResource(R.drawable.ic_stop)
+            btnToggle.setBackgroundColor(ContextCompat.getColor(this, R.color.danger))
         } else {
             tvStatus.text = if (ApiClient.hasKey()) "To'xtatilgan" else "Kalit kiriting"
             statusDot.setBackgroundResource(R.drawable.dot_red)
-            btnToggle.text = if (ApiClient.hasKey()) "▶  ISHGA TUSHIRISH" else "🔑  KALIT KIRITISH"
-            btnToggle.setBackgroundColor(ContextCompat.getColor(this, android.R.color.holo_green_dark))
+            if (ApiClient.hasKey()) {
+                btnToggle.text = "ISHGA TUSHIRISH"
+                btnToggle.setIconResource(R.drawable.ic_play)
+                btnToggle.setBackgroundColor(ContextCompat.getColor(this, R.color.success))
+            } else {
+                btnToggle.text = "KALIT KIRITISH"
+                btnToggle.setIconResource(R.drawable.ic_settings)
+                btnToggle.setBackgroundColor(ContextCompat.getColor(this, R.color.brand))
+            }
         }
-        tvStats.text = "Yuborildi: ${SmsWorkerService.sentCount}  |  Xato: ${SmsWorkerService.failCount}"
+        tvSent.text = SmsWorkerService.sentCount.toString()
+        tvFailed.text = SmsWorkerService.failCount.toString()
         if (SmsWorkerService.lastLog.isNotEmpty()) {
             tvLastAction.text = SmsWorkerService.lastLog
         }

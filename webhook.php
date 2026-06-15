@@ -497,8 +497,8 @@ if (isset($_GET['action'])) {
     if ($action == 'version') {
         echo json_encode([
             "status"      => "ok",
-            "latest_code" => 5,            // app versionCode
-            "latest_name" => "0.3.0",      // app versionName
+            "latest_code" => 6,            // app versionCode
+            "latest_name" => "0.4.0",      // app versionName
             "url"         => "https://sms.idrokedu.uz/SmsGateway.apk",
             "force"       => true
         ]);

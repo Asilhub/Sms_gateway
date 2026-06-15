@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Yumaloq burchakli gradient fon (eski Android uchun) -->
+    <path android:pathData="M22,4 H86 a18,18 0 0 1 18,18 V86 a18,18 0 0 1 -18,18 H22 a18,18 0 0 1 -18,-18 V22 a18,18 0 0 1 18,-18 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:type="linear"
+                android:startX="4" android:startY="4"
+                android:endX="104" android:endY="104"
+                android:startColor="#3B82F6"
+                android:endColor="#1E40AF" />
+        </aapt:attr>
+    </path>
+    <!-- Chat pufakchasi -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M36,38 H72 a6,6 0 0 1 6,6 V62 a6,6 0 0 1 -6,6 H44 L34,77 L36,68 a6,6 0 0 1 -6,-6 V44 a6,6 0 0 1 6,-6 Z" />
+    <path
+        android:fillColor="#2563EB"
+        android:pathData="M44,53 m-3.2,0 a3.2,3.2 0 1 0 6.4,0 a3.2,3.2 0 1 0 -6.4,0 Z M54,53 m-3.2,0 a3.2,3.2 0 1 0 6.4,0 a3.2,3.2 0 1 0 -6.4,0 Z M64,53 m-3.2,0 a3.2,3.2 0 1 0 6.4,0 a3.2,3.2 0 1 0 -6.4,0 Z" />
+</vector>

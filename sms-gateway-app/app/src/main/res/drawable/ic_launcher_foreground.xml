@@ -4,10 +4,12 @@
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
+    <!-- Chat / SMS pufakchasi (oq) -->
     <path
         android:fillColor="#FFFFFF"
-        android:pathData="M54,30 L54,30 C60,30 65,35 65,41 L65,55 L75,55 L54,78 L33,55 L43,55 L43,41 C43,35 48,30 54,30 Z" />
+        android:pathData="M36,34 H72 a6,6 0 0 1 6,6 V58 a6,6 0 0 1 -6,6 H44 L34,73 L36,64 a6,6 0 0 1 -6,-6 V40 a6,6 0 0 1 6,-6 Z" />
+    <!-- Uchta nuqta (brend rangi) -->
     <path
-        android:fillColor="#FFFFFF"
-        android:pathData="M38,35 L42,39 M66,39 L70,35 M52,25 L52,20 L56,20 L56,25" />
+        android:fillColor="#2563EB"
+        android:pathData="M44,49 m-3.2,0 a3.2,3.2 0 1 0 6.4,0 a3.2,3.2 0 1 0 -6.4,0 Z M54,49 m-3.2,0 a3.2,3.2 0 1 0 6.4,0 a3.2,3.2 0 1 0 -6.4,0 Z M64,49 m-3.2,0 a3.2,3.2 0 1 0 6.4,0 a3.2,3.2 0 1 0 -6.4,0 Z" />
 </vector>

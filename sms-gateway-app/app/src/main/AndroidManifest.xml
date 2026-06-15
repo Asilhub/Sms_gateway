@@ -18,7 +18,8 @@
 
     <application
         android:allowBackup="false"
-        android:icon="@drawable/ic_launcher_foreground"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher_round"
         android:label="SMS Gateway"
         android:theme="@style/AppTheme"
         android:supportsRtl="true"

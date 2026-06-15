@@ -41,7 +41,22 @@ Ta'lim kompaniyasi (idrokedu.uz) o'z kontaktlariga ommaviy SMS yuborish uchun is
 - Yangi versiya chiqarganda: build.gradle versionCode++, webhook.php `version` endpoint
   latest_code/name yangilash, APK ni serverga (SmsGateway.apk) yuklash.
 
-## v0.3.0 (app + server, deploy qilingan 2026-06-15) — joriy
+## v0.4.0 (app + server, deploy qilingan 2026-06-16) — joriy
+**UI/dizayn yangilanishi.** latest_code=6.
+1. ✅ **Launcher icon tuzatildi** (avval hamma telefonda oppoq edi — manifest `android:icon` to'g'ridan
+   to'g'ri `ic_launcher_foreground` (orqa fonsiz oq vektor) ga ishora qilardi). Endi to'liq adaptive
+   icon: `mipmap-anydpi-v26/ic_launcher(_round).xml` (background gradient + foreground chat-pufakcha +
+   monochrome), API24/25 uchun `mipmap/ic_launcher*.xml` → `drawable/ic_launcher_legacy.xml` (composed
+   vektor). Manifest: `@mipmap/ic_launcher` + `roundIcon`.
+2. ✅ **Yangi UI** (`activity_main.xml`): gradient header (logo+sarlavha+qurilma+versiya+⚙️),
+   status kartasi, Yuborildi/Xato statistika kartalari (ic_check/ic_error), ic_play/ic_stop bilan
+   tugma, yumaloq terminal-jurnal. Yangi palitra `colors.xml`, light tema `themes.xml`.
+3. ✅ **Sozlamalar menyusi** (⚙️ header tugmasi → `showSettingsMenu()`): API kalit, yangilanish
+   tekshirish, batareya optimizatsiyasi, bildirishnoma sozlamalari, qurilma ID nusxalash,
+   jurnal tozalash, ilova haqida.
+4. Material vektor ikonkalar: `ic_sms, ic_play, ic_stop, ic_settings, ic_check, ic_error`.
+
+## v0.3.0 (app + server, deploy qilingan 2026-06-15)
 1. ✅ **Emoji tuzatildi**: `get_task` endi `json_encode($task, JSON_UNESCAPED_UNICODE)` +
    header `application/json; charset=utf-8`. Emoji (4-baytli UTF-8) surrogat-juft escape'siz
    xom UTF-8 sifatida ketadi — ilovada buzilmaydi. (Ildiz sabab: kirilcha ishlardi, emoji yo'q.)
