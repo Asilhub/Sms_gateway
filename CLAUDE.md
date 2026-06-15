@@ -41,6 +41,16 @@ Ta'lim kompaniyasi (idrokedu.uz) o'z kontaktlariga ommaviy SMS yuborish uchun is
 - Yangi versiya chiqarganda: build.gradle versionCode++, webhook.php `version` endpoint
   latest_code/name yangilash, APK ni serverga (SmsGateway.apk) yuklash.
 
+## v0.3.0 (app + server, deploy qilingan 2026-06-15) — joriy
+1. ✅ **Emoji tuzatildi**: `get_task` endi `json_encode($task, JSON_UNESCAPED_UNICODE)` +
+   header `application/json; charset=utf-8`. Emoji (4-baytli UTF-8) surrogat-juft escape'siz
+   xom UTF-8 sifatida ketadi — ilovada buzilmaydi. (Ildiz sabab: kirilcha ishlardi, emoji yo'q.)
+2. ✅ **160 limit → 800**: Broadcast `WAIT_FOR_MSG` da limit 800 belgiga ko'tarildi; `smsSegments()`
+   helper GSM-7/UCS-2 ga qarab necha SMS ketishini ko'rsatadi (uzun matn = multipart).
+3. ✅ **`1206` o'chirildi**: server `config.php` `api_keys` da faqat asosiy kalit qoldi. Eski
+   kalit endi 403. (Eski/v0.0.1 telefonlar ishlamay qoladi — qo'lda v0.3.0 o'rnatish kerak.)
+4. ✅ App: qurilma satrida `v0.3.0`, bosib qo'lda yangilanish tekshirish. latest_code=5.
+
 ## v0.1.0 (app + server, deploy qilingan)
 1. ✅ API kalit APK ichida YO'Q — `ApiClient.apiKey` prefs'dan, foydalanuvchi kiritadi
    (MainActivity `showKeyDialog`). Server URL faqat BuildConfig'da.
@@ -50,6 +60,5 @@ Ta'lim kompaniyasi (idrokedu.uz) o'z kontaktlariga ommaviy SMS yuborish uchun is
 3. ✅ Server: get_task `sim_slot`, ko'p kalit (`api_keys`), `.htaccess` (db-wal/config.php) — deploy qilingan.
 
 ## Hal qilinmagan (kelajakdagi ish)
-1. 160-belgi cheklovi kirilcha (UCS-2, 70 belgi) uchun noto'g'ri — server tomonida.
-2. Barcha telefonlar v0.1.0 ga o'tgach, `config.php` `api_keys` dan `1206` ni olib tashlash.
-3. Mavjud v0.0.1 telefonlar majburiy-yangilanish kodiga ega emas — bir marta qo'lda o'rnatish kerak.
+1. Eski (v0.0.1 / 1206 kalitdagi) telefonlar endi ishlamaydi — bir marta qo'lda v0.3.0 o'rnatish kerak.
+   v0.1.0+ telefonlar majburiy-yangilanish orqali o'zi o'tadi (force-update).

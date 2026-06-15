@@ -79,9 +79,14 @@ class MainActivity : AppCompatActivity() {
             deviceId = "${brand}_${model}_$rand"
             prefs.edit().putString("device_id", deviceId).apply()
         }
-        tvDeviceId.text = "Qurilma: $deviceId"
+        tvDeviceId.text = "Qurilma: $deviceId  •  v${BuildConfig.VERSION_NAME}"
         // Uzoq bosib API kalitni o'zgartirish mumkin
         tvDeviceId.setOnLongClickListener { showKeyDialog(); true }
+        // Bosib qo'lda yangilanish tekshirish
+        tvDeviceId.setOnClickListener {
+            appendLog("🔄 Yangilanish tekshirilmoqda...")
+            checkForUpdate(manual = true)
+        }
 
         // Log callback
         SmsWorkerService.onLogUpdate = { line ->
@@ -160,16 +165,22 @@ class MainActivity : AppCompatActivity() {
 
     // ---- MAJBURIY YANGILANISH ----
 
-    private fun checkForUpdate() {
+    private fun checkForUpdate(manual: Boolean = false) {
         if (updateDialog?.isShowing == true) return
         Thread {
-            val info = ApiClient.getLatestVersion() ?: return@Thread
+            val info = ApiClient.getLatestVersion()
+            if (info == null) {
+                if (manual) runOnUiThread { appendLog("⚠️ Server bilan aloqa yo'q") }
+                return@Thread
+            }
             val latest = info.optInt("latest_code", 0)
             val url = info.optString("url", "")
             if (latest > BuildConfig.VERSION_CODE && url.isNotEmpty()) {
                 val name = info.optString("latest_name", "")
                 val force = info.optBoolean("force", false)
                 runOnUiThread { showUpdateDialog(name, url, force) }
+            } else if (manual) {
+                runOnUiThread { appendLog("✅ Eng so'nggi versiya: v${BuildConfig.VERSION_NAME}") }
             }
         }.start()
     }

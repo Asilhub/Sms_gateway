@@ -104,6 +104,31 @@ function formatPhone($phone)
     return $phone;
 }
 
+/**
+ * SMS uchun necha segment (alohida SMS) ketishini taxminlaydi.
+ * GSM-7 ga sig'sa: 160 / segment (uzun bo'lsa 153). Kirilcha/emoji bo'lsa UCS-2:
+ * 70 / segment (uzun bo'lsa 67). Ilova ham shunga mos ravishda multipart yuboradi.
+ */
+function smsSegments($text)
+{
+    $len = mb_strlen($text, 'UTF-8');
+    if ($len === 0) return 0;
+    // GSM-7 asosiy belgilar to'plami (kengaytma belgilarsiz — taxminiy)
+    $gsm = "@£\$¥èéùìòÇ\nØø\rÅåΔ_ΦΓΛΩΠΨΣΘΞÆæßÉ !\"#¤%&'()*+,-./0123456789:;<=>?¡"
+         . "ABCDEFGHIJKLMNOPQRSTUVWXYZÄÖÑÜ§¿abcdefghijklmnopqrstuvwxyzäöñüà";
+    $isGsm = true;
+    for ($i = 0; $i < $len; $i++) {
+        if (mb_strpos($gsm, mb_substr($text, $i, 1, 'UTF-8'), 0, 'UTF-8') === false) {
+            $isGsm = false;
+            break;
+        }
+    }
+    if ($isGsm) {
+        return $len <= 160 ? 1 : (int)ceil($len / 153);
+    }
+    return $len <= 70 ? 1 : (int)ceil($len / 67);
+}
+
 // ---- QURILMA FUNKSIYALARI ----
 
 function registerDevice($device_id)
@@ -450,7 +475,8 @@ if (isset($_GET['phone']) && isset($_GET['text']) && !isset($_GET['action'])) {
 if (isset($_GET['action'])) {
     $action = $_GET['action'];
     $key = $_GET['key'] ?? '';
-    header('Content-Type: application/json');
+    // charset=utf-8: emoji va kirilcha matn ilovaga buzilmasdan yetib borishi uchun
+    header('Content-Type: application/json; charset=utf-8');
 
     // Key tekshirish
     if (!keyValid($key) && $action !== 'heartbeat' && $action !== 'version') {
@@ -471,8 +497,8 @@ if (isset($_GET['action'])) {
     if ($action == 'version') {
         echo json_encode([
             "status"      => "ok",
-            "latest_code" => 4,            // app versionCode
-            "latest_name" => "0.2.0",      // app versionName
+            "latest_code" => 5,            // app versionCode
+            "latest_name" => "0.3.0",      // app versionName
             "url"         => "https://sms.idrokedu.uz/SmsGateway.apk",
             "force"       => true
         ]);
@@ -604,7 +630,9 @@ if (isset($_GET['action'])) {
         if ($task) {
             // Ilova qaysi SIM'dan yuborishini bilishi uchun qurilma sim_slot ini qo'shamiz
             $task['sim_slot'] = (int)($dev['sim_slot'] ?? 0);
-            echo json_encode($task);
+            // JSON_UNESCAPED_UNICODE: emoji (4-baytli UTF-8) \uXXXX surrogat juftlarsiz,
+            // xom UTF-8 sifatida yuboriladi — ilovada buzilmaydi.
+            echo json_encode($task, JSON_UNESCAPED_UNICODE);
         } else {
             echo json_encode(["status" => "empty"]);
         }
@@ -1322,26 +1350,27 @@ if (isset($update['message'])) {
             exit;
         }
         file_put_contents($status_file, "WAIT_FOR_MSG");
-        sendMessage($chat_id, "📝 <b>Broadcast</b>\n\n👥 Qabul qiluvchilar: <b>$count</b> ta\n\n✍️ Xabar matnini yozing (max 160 belgi):", ['remove_keyboard' => true], "HTML");
+        sendMessage($chat_id, "📝 <b>Broadcast</b>\n\n👥 Qabul qiluvchilar: <b>$count</b> ta\n\n✍️ Xabar matnini yozing.\n<i>Uzun matn va emoji ham bo'ladi (uzun bo'lsa bir nechta SMS sifatida ketadi).</i>", ['remove_keyboard' => true], "HTML");
     }
 
     elseif ($state == "WAIT_FOR_MSG") {
         @unlink($status_file);
         $charCount = mb_strlen($text, 'UTF-8');
-        if ($charCount > 160) {
-            sendMessage($chat_id, "⚠️ Juda uzun: <b>$charCount</b> belgi (max 160)\n" . ($charCount - 160) . " ta belgini olib tashlang.", mainKeyboard(), "HTML");
-            exit;
-        }
         if ($charCount == 0) {
             sendMessage($chat_id, "⚠️ Bo'sh xabar!", mainKeyboard());
             exit;
         }
+        if ($charCount > 800) {
+            sendMessage($chat_id, "⚠️ Juda uzun: <b>$charCount</b> belgi (max 800)\n" . ($charCount - 800) . " ta belgini olib tashlang.", mainKeyboard(), "HTML");
+            exit;
+        }
 
+        $seg = smsSegments($text);
         file_put_contents(__DIR__ . "/pending_msg_" . $chat_id . ".txt", $text);
         $hash = substr(md5($text . time()), 0, 8);
         $preview = mb_strlen($text, 'UTF-8') > 50 ? mb_substr($text, 0, 50, 'UTF-8') . "..." : $text;
 
-        sendMessage($chat_id, "✅ <b>Qabul qilindi!</b>\n\n📊 <b>$charCount/160</b> belgi\n📝 <code>" . e($preview) . "</code>\n\n🔄 Tartibni tanlang:", ['inline_keyboard' => [
+        sendMessage($chat_id, "✅ <b>Qabul qilindi!</b>\n\n📊 <b>$charCount</b> belgi • ~<b>$seg</b> ta SMS\n📝 <code>" . e($preview) . "</code>\n\n🔄 Tartibni tanlang:", ['inline_keyboard' => [
                 [
                     ['text' => "🔽 Boshidan", 'callback_data' => "order_asc_$hash"],
                     ['text' => "🔼 Oxiridan", 'callback_data' => "order_desc_$hash"]
