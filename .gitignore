@@ -1,0 +1,42 @@
+# ============ MAXFIY / RUNTIME (server) ============
+# maxfiy kalitlar — config.example.php ni commit qiling, config.php ni emas
+config.php
+
+# SQLite ma'lumotlar bazasi (kontaktlar, navbat)
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+
+# webhook.php yaratadigan holat fayllari
+broadcast_state.txt
+broadcast_config.json
+night_mode.json
+smart_break.txt
+error_streak.txt
+pending_msg_*.txt
+status_*.txt
+last_error_*.txt
+
+# ============ ANDROID / GRADLE ============
+*.apk
+*.aab
+.gradle/
+build/
+local.properties
+keys.properties
+*.iml
+captures/
+.cxx/
+gradle-app.setting
+
+# ============ IDE ============
+.idea/
+.vscode/
+
+# ============ CLAUDE ============
+.claude/settings.local.json
+
+# ============ OS ============
+.DS_Store
+Thumbs.db

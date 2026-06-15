@@ -1,0 +1,103 @@
+# SMS Gateway
+
+Android telefonni SMS shlyuziga (gateway) aylantiruvchi tizim. Telegram bot orqali
+boshqariladi, tashqi CRM tizimlaridan API orqali SMS yuborish imkonini beradi.
+
+> **Eslatma:** Faqat o'zingizning roziligi bor kontaktlaringizga (mijozlar, o'quvchilar
+> va h.k.) xabar yuborish uchun ishlating. Spam va ruxsatsiz tarqatish ko'p davlatlarda
+> qonunga zid.
+
+## Arxitektura
+
+```
+┌─────────────┐      HTTPS       ┌──────────────────┐      SMS      ┌──────────┐
+│  Telegram   │ ───────────────▶ │   webhook.php    │ ◀──polling─── │ Android  │
+│  admin bot  │ ◀─────────────── │  (PHP + SQLite)  │ ──tasks────▶  │   ilova  │ ──▶ 📱
+└─────────────┘                  └──────────────────┘               └──────────┘
+                                          ▲
+                                          │ HTTPS API (key)
+                                  ┌───────┴────────┐
+                                  │   CRM / tashqi  │
+                                  │     tizim       │
+                                  └────────────────┘
+```
+
+- **Android ilova** (`sms-gateway-app/`) — serverni har necha soniyada so'roq qiladi
+  (poll), navbatdagi SMS vazifasini oladi va telefon SIM-kartasi orqali yuboradi.
+  Foreground service sifatida ishlaydi, qurilma yonganda avtomatik tiklanadi.
+- **Backend** (`webhook.php`) — bitta PHP fayl: Telegram bot + qurilma API + CRM API.
+  Ma'lumotlar SQLite (`sms.db`) da saqlanadi.
+
+## Tarkibiy qismlar
+
+| Fayl/papka | Vazifasi |
+|---|---|
+| `webhook.php` | Backend: Telegram bot, qurilma API, CRM API |
+| `config.php` | Maxfiy kalitlar (git'ga **kirmaydi**) |
+| `config.example.php` | Sozlama namunasi |
+| `.htaccess` | `.db`/`.txt`/`.json` fayllarga to'g'ridan-to'g'ri kirishni bloklaydi |
+| `sms-gateway-app/` | Android ilova (Kotlin) |
+| `SmsGateway.apk` | Tayyor o'rnatish fayli (git'da saqlanmaydi) |
+
+### Android ilova ichki tuzilishi
+- `MainActivity.kt` — UI, ruxsatlar, qurilma ID, workerni boshqarish
+- `SmsWorkerService.kt` — fon xizmati: poll → SMS yuborish → status qaytarish
+- `ApiClient.kt` — serverga HTTP so'rovlar
+- `IncomingSmsReceiver.kt` — kiruvchi SMS larni serverga xabar qiladi
+- `BootReceiver.kt` — qurilma yonganda xizmatni qayta ishga tushiradi
+
+## O'rnatish
+
+### 1. Backend (server)
+1. `webhook.php`, `config.example.php`, `.htaccess` ni serverga yuklang (HTTPS shart).
+2. Sozlama faylini yarating:
+   ```bash
+   cp config.example.php config.php
+   ```
+   `config.php` ichida `bot_token`, `admin_ids`, `api_key` ni to'ldiring.
+3. Telegram webhook ni o'rnating:
+   ```
+   https://api.telegram.org/bot<TOKEN>/setWebhook?url=https://sms.idrokedu.uz/webhook.php
+   ```
+4. SQLite jadvallari birinchi so'rovda avtomatik yaratiladi.
+
+### 2. Android ilova
+1. `sms-gateway-app/` ni Android Studio'da oching.
+2. Maxfiy kalit faylini yarating:
+   ```bash
+   cd sms-gateway-app
+   cp keys.properties.example keys.properties
+   ```
+   `keys.properties` ichida `SERVER` va `API_KEY` ni to'ldiring.
+   **`API_KEY` server `config.php` dagi `api_key` bilan aynan bir xil bo'lishi shart.**
+   So'ng quring: `./gradlew assembleDebug`
+3. APK ni telefonga o'rnating, SMS ruxsatlarini bering, batareya optimizatsiyasini o'chiring.
+4. Ilova ishga tushgach, qurilma serverda avtomatik ro'yxatga olinadi.
+
+## API (CRM integratsiyasi)
+
+Barcha so'rovlar `?key=<API_KEY>` talab qiladi.
+
+| Action | Misol | Tavsif |
+|---|---|---|
+| `send` | `?action=send&key=KEY&phone=+998...&text=Salom` | Navbatga SMS qo'shadi, `id` qaytaradi |
+| `check_status` | `?action=check_status&key=KEY&id=123` | SMS holatini tekshiradi |
+| `stats` | `?action=stats&key=KEY` | Navbat va onlayn qurilmalar statistikasi |
+
+### Qurilma API (ilova ishlatadi)
+`heartbeat`, `get_task`, `update`, `incoming_sms`, `incoming_call`, `error`.
+
+## Telegram bot
+Admin menyusi: **Broadcast** (ommaviy yuborish), **Status**, **Qurilmalar**
+(boshqarish, SIM tanlash, nom), **Boshqaruv** (pauza/davom/to'xtatish, test SMS,
+kontaktlar, tungi rejim). Kontaktlar `.txt`/`.csv` fayl tashlab qo'shiladi.
+
+## Holat fayllari (runtime, git'da yo'q)
+`sms.db`, `broadcast_state.txt`, `broadcast_config.json`, `night_mode.json`,
+`smart_break.txt`, `error_streak.txt`, `pending_msg_*.txt`, `status_*.txt`.
+
+## Ma'lum kamchiliklar (TODO)
+- Ilova SMS yuborilganini real tekshirmaydi (`PendingIntent` yo'q) — har doim "sent".
+- `ApiClient` da URL-encoding yo'q — maxsus belgili matnlar buziladi.
+- Botda SIM tanlash bor, lekin ilova `sim_slot` ni o'qimaydi.
+- 160-belgi cheklovi kirilcha matn uchun noto'g'ri (UCS-2 → 70 belgi).

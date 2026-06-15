@@ -1,0 +1,6 @@
+<FilesMatch "\.(db|txt|json|log)$">
+    Order deny,allow
+    Deny from all
+</FilesMatch>
+
+Options -Indexes
