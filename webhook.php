@@ -652,8 +652,10 @@ if (isset($_GET['action'])) {
     // charset=utf-8: emoji va kirilcha matn ilovaga buzilmasdan yetib borishi uchun
     header('Content-Type: application/json; charset=utf-8');
 
-    // Key tekshirish
-    if (!keyValid($key) && $action !== 'heartbeat' && $action !== 'version') {
+    // Key tekshirish. Faqat 'version' kalitsiz (majburiy yangilanishni kalit kiritishdan
+    // oldin ham tekshirish uchun). 'heartbeat' ham endi haqiqiy kalit talab qiladi —
+    // shuning uchun eski/o'chirilgan kalitli (masalan 1206) telefon umuman ulanolmaydi.
+    if (!keyValid($key) && $action !== 'version') {
         http_response_code(401);
         echo json_encode(["status" => "error", "message" => "Unauthorized"]);
         exit;

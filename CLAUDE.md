@@ -41,6 +41,13 @@ Ta'lim kompaniyasi (idrokedu.uz) o'z kontaktlariga ommaviy SMS yuborish uchun is
 - Yangi versiya chiqarganda: build.gradle versionCode++, webhook.php `version` endpoint
   latest_code/name yangilash, APK ni serverga (SmsGateway.apk) yuklash.
 
+## Xavfsizlik: heartbeat endi kalit talab qiladi (server, deploy 2026-06-16) — joriy
+- `webhook.php` device API: faqat `version` kalitsiz. Avval `heartbeat` ham kalitsiz edi —
+  shuning uchun o'chirilgan kalitli (1206) eski telefon `get_task` qilolmasa ham heartbeat
+  yuborib "onlayn" ko'rinardi. Endi `heartbeat` ham `keyValid()` talab qiladi → eski/yaroqsiz
+  kalitli qurilma umuman ulanolmaydi (401) va ro'yxatga tushmaydi.
+- `stats` API'ga `?devices=1` qo'shildi (diagnostika: qurilma id/online/last_seen/app).
+
 ## v0.5.0 (app + server, deploy 2026-06-16) — joriy. latest_code=7
 1. ✅ **Takror qurilma muammosi**: device_id endi BARQAROR — `ANDROID_ID` hash'idan
    (`generateDeviceId()` MainActivity + `SmsWorkerService.loadDeviceId()`). Qayta o'rnatishda
