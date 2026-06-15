@@ -442,7 +442,7 @@ if (isset($_GET['action'])) {
     header('Content-Type: application/json');
 
     // Key tekshirish
-    if (!keyValid($key) && $action !== 'heartbeat') {
+    if (!keyValid($key) && $action !== 'heartbeat' && $action !== 'version') {
         http_response_code(401);
         echo json_encode(["status" => "error", "message" => "Unauthorized"]);
         exit;
@@ -453,6 +453,18 @@ if (isset($_GET['action'])) {
         if ($device_id)
             updateHeartbeat($device_id);
         echo json_encode(["status" => "ok", "time" => time()]);
+        exit;
+    }
+
+    // Ilova versiyasini tekshirish (kalit talab qilinmaydi) — majburiy yangilanish uchun
+    if ($action == 'version') {
+        echo json_encode([
+            "status"      => "ok",
+            "latest_code" => 3,            // app versionCode
+            "latest_name" => "0.1.0",      // app versionName
+            "url"         => "https://sms.idrokedu.uz/SmsGateway.apk",
+            "force"       => true
+        ]);
         exit;
     }
 

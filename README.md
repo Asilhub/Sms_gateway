@@ -63,14 +63,15 @@ boshqariladi, tashqi CRM tizimlaridan API orqali SMS yuborish imkonini beradi.
 
 ### 2. Android ilova
 1. `sms-gateway-app/` ni Android Studio'da oching.
-2. Maxfiy kalit faylini yarating:
+2. Server manzilini sozlang:
    ```bash
    cd sms-gateway-app
    cp keys.properties.example keys.properties
    ```
-   `keys.properties` ichida `SERVER` va `API_KEY` ni to'ldiring.
-   **`API_KEY` server `config.php` dagi `api_key` bilan aynan bir xil bo'lishi shart.**
-   So'ng quring: `./gradlew assembleDebug`
+   `keys.properties` da faqat `SERVER` bo'ladi (maxfiy emas). So'ng: `./gradlew assembleDebug`
+3. **API kalit APK ichida saqlanmaydi** — foydalanuvchi ilovani birinchi ochganda
+   qo'lda kiritadi (server `config.php` dagi `api_keys` dan biri). Kalitni keyin
+   o'zgartirish: "Qurilma: ..." matnini uzoq bosing.
 3. APK ni telefonga o'rnating, SMS ruxsatlarini bering, batareya optimizatsiyasini o'chiring.
 4. Ilova ishga tushgach, qurilma serverda avtomatik ro'yxatga olinadi.
 
@@ -96,13 +97,19 @@ kontaktlar, tungi rejim). Kontaktlar `.txt`/`.csv` fayl tashlab qo'shiladi.
 `sms.db`, `broadcast_state.txt`, `broadcast_config.json`, `night_mode.json`,
 `smart_break.txt`, `error_streak.txt`, `pending_msg_*.txt`, `status_*.txt`.
 
+## O'zgarishlar (v0.1.0)
+- ✅ **API kalit APK ichida emas** — foydalanuvchi qo'lda kiritadi (decompile qilsa ham sir yo'q).
+- ✅ **Majburiy yangilanish** — ilova `action=version` ni tekshiradi; eski bo'lsa yopiq dialog
+  ko'rsatib, yangi APK'ni (serverdan) yuklashga undaydi.
+- ✅ Server `api_keys` massiv — bir nechta kalit (migratsiya/kalit almashtirish uchun).
+
 ## O'zgarishlar (v0.0.2)
 - ✅ SMS endi `PendingIntent` (SENT) orqali **haqiqatda** tekshiriladi — "yolg'on sent" tugadi.
 - ✅ `ApiClient` da to'liq URL-encoding — maxsus belgili matn/raqamlar buzilmaydi.
-- ✅ SIM tanlash: ilova `get_task` javobidagi `sim_slot` ga qarab to'g'ri SIM'dan yuboradi.
+- ✅ SIM tanlash: ilova `get_task` javobidagi `sim_slot` ga qarab to'g'ri SIM'dan yuboradi
+  (server endi `sim_slot` ni yuboradi).
 - ✅ Ketma-ket 5+ xatoda qurilma to'xtaydi ("SIM paketi tugagan bo'lishi mumkin") va behuda urinmaydi.
 
 ## Qolgan ishlar (TODO)
-- SIM tanlash to'liq ishlashi uchun **server `get_task` javobiga `sim_slot` qo'shilishi** kerak
-  (qurilma config'idan). Hozircha server yubormasa default SIM ishlatiladi.
 - 160-belgi cheklovi kirilcha matn uchun noto'g'ri (UCS-2 → 70 belgi) — server tomonida.
+- Barcha telefonlar v0.1.0 ga o'tgach, `config.php` `api_keys` dan eski `1206` ni olib tashlash.

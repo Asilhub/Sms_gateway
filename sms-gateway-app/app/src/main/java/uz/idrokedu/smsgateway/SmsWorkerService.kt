@@ -45,6 +45,7 @@ class SmsWorkerService : Service() {
     override fun onCreate() {
         super.onCreate()
         deviceId = loadDeviceId()
+        ApiClient.init(this)
         createNotificationChannel()
         val wakePm = getSystemService(Context.POWER_SERVICE) as PowerManager
         wakeLock = wakePm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "SmsGateway::Worker")
@@ -80,6 +81,14 @@ class SmsWorkerService : Service() {
     }
 
     private suspend fun processLoop() {
+        // API kalit kiritilmagan bo'lsa — ishlamaymiz
+        if (!ApiClient.hasKey()) {
+            log("🔑 API kalit kiritilmagan")
+            updateNotification("API kalit kiriting — ilovani oching")
+            delay(60_000)
+            return
+        }
+
         // Heartbeat
         if (!ApiClient.heartbeat(deviceId)) {
             log("🔴 Server bilan aloqa yo'q")

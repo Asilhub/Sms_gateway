@@ -21,11 +21,11 @@ android {
         applicationId = "uz.idrokedu.smsgateway"
         minSdk = 24
         targetSdk = 34
-        versionCode = 2
-        versionName = "0.0.2"
+        versionCode = 3
+        versionName = "0.1.0"
 
-        buildConfigField("String", "API_KEY", "\"${keyProp("API_KEY")}\"")
-        buildConfigField("String", "SERVER", "\"${keyProp("SERVER")}\"")
+        // API kalit APK ichida saqlanmaydi (foydalanuvchi kiritadi). Faqat SERVER manzili.
+        buildConfigField("String", "SERVER", "\"${keyProp("SERVER", "https://sms.idrokedu.uz/webhook.php")}\"")
     }
 
     buildFeatures {

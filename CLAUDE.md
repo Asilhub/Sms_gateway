@@ -32,9 +32,15 @@ Ta'lim kompaniyasi (idrokedu.uz) o'z kontaktlariga ommaviy SMS yuborish uchun is
 3. ✅ SIM tanlash: `get_task` javobidagi `sim_slot` (optInt) ga qarab SubscriptionManager.
 4. ✅ Ketma-ket 5+ xato → `haltSimExhausted()` (to'xtaydi, admin'ga xabar).
 
+## v0.1.0 (app + server, deploy qilingan)
+1. ✅ API kalit APK ichida YO'Q — `ApiClient.apiKey` prefs'dan, foydalanuvchi kiritadi
+   (MainActivity `showKeyDialog`). Server URL faqat BuildConfig'da.
+2. ✅ Majburiy yangilanish: app `action=version` ni tekshiradi → `showUpdateDialog`.
+   Server `version` endpoint `latest_code/url/force` qaytaradi (kalitsiz). APK serverda:
+   `https://sms.idrokedu.uz/SmsGateway.apk`. Yangi versiyada `latest_code` ni oshirish kerak.
+3. ✅ Server: get_task `sim_slot`, ko'p kalit (`api_keys`), `.htaccess` (db-wal/config.php) — deploy qilingan.
+
 ## Hal qilinmagan (kelajakdagi ish)
-1. **Server `get_task` javobiga `sim_slot` qo'shish** kerak — aks holda ilova doim default SIM.
-   (FTP olgach server tomonda qo'shiladi.)
-2. 160-belgi cheklovi kirilcha (UCS-2, 70 belgi) uchun noto'g'ri — server tomonida.
-3. `.htaccess` `sms.db-wal` ni bloklamaydi (kengaytma `.db` bilan tugamaydi).
-4. API kalit rotatsiyasi (server config.php + CRM) — [[sms-gateway-github-setup]] ga qarang.
+1. 160-belgi cheklovi kirilcha (UCS-2, 70 belgi) uchun noto'g'ri — server tomonida.
+2. Barcha telefonlar v0.1.0 ga o'tgach, `config.php` `api_keys` dan `1206` ni olib tashlash.
+3. Mavjud v0.0.1 telefonlar majburiy-yangilanish kodiga ega emas — bir marta qo'lda o'rnatish kerak.

@@ -8,8 +8,11 @@ import android.os.Build
 import android.os.Bundle
 import android.os.PowerManager
 import android.provider.Settings
+import android.widget.EditText
+import android.widget.FrameLayout
 import android.widget.ScrollView
 import android.widget.TextView
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
@@ -28,6 +31,8 @@ class MainActivity : AppCompatActivity() {
 
     private val logLines = mutableListOf<String>()
     private val maxLogLines = 100
+
+    private var updateDialog: AlertDialog? = null
 
     private val requiredPermissions = mutableListOf(
         Manifest.permission.SEND_SMS,
@@ -53,6 +58,8 @@ class MainActivity : AppCompatActivity() {
         btnToggle = findViewById(R.id.btnToggle)
         statusDot = findViewById(R.id.statusDot)
 
+        ApiClient.init(this)
+
         // Device ID
         val prefs = getSharedPreferences("sms_gateway", MODE_PRIVATE)
         var deviceId = prefs.getString("device_id", null)
@@ -64,6 +71,8 @@ class MainActivity : AppCompatActivity() {
             prefs.edit().putString("device_id", deviceId).apply()
         }
         tvDeviceId.text = "Qurilma: $deviceId"
+        // Uzoq bosib API kalitni o'zgartirish mumkin
+        tvDeviceId.setOnLongClickListener { showKeyDialog(); true }
 
         // Log callback
         SmsWorkerService.onLogUpdate = { line ->
@@ -71,17 +80,19 @@ class MainActivity : AppCompatActivity() {
         }
 
         btnToggle.setOnClickListener {
-            if (SmsWorkerService.isRunning) {
-                stopWorker()
-            } else {
-                requestPermissionsAndStart()
+            when {
+                SmsWorkerService.isRunning -> stopWorker()
+                !ApiClient.hasKey() -> showKeyDialog()
+                else -> requestPermissionsAndStart()
             }
         }
 
         updateUI()
 
-        // Agar ruxsatlar bor bo'lsa — darhol ishga tushirish
-        if (hasAllPermissions()) {
+        // API kalit yo'q bo'lsa — avval kalit so'raymiz
+        if (!ApiClient.hasKey()) {
+            showKeyDialog()
+        } else if (hasAllPermissions()) {
             requestBatteryOptimization()
             if (!SmsWorkerService.isRunning) {
                 startWorker()
@@ -97,7 +108,80 @@ class MainActivity : AppCompatActivity() {
             runOnUiThread { appendLog(line) }
         }
         updateUI()
+        checkForUpdate()
     }
+
+    // ---- API KALIT ----
+
+    private fun showKeyDialog() {
+        val input = EditText(this).apply {
+            hint = "API kalit"
+            setText(ApiClient.apiKey)
+            setSingleLine()
+        }
+        val pad = (16 * resources.displayMetrics.density).toInt()
+        val box = FrameLayout(this).apply {
+            setPadding(pad, pad / 2, pad, 0)
+            addView(input)
+        }
+        AlertDialog.Builder(this)
+            .setTitle("🔑 API kalit")
+            .setMessage("Ishlash uchun API kalitni kiriting.\nKalitni administrator beradi.")
+            .setView(box)
+            .setCancelable(false)
+            .setPositiveButton("Saqlash") { _, _ ->
+                val key = input.text.toString().trim()
+                if (key.isEmpty()) {
+                    appendLog("⚠️ Kalit bo'sh bo'lishi mumkin emas")
+                    showKeyDialog()
+                } else {
+                    ApiClient.saveApiKey(this, key)
+                    appendLog("🔑 Kalit saqlandi")
+                    if (hasAllPermissions()) {
+                        requestBatteryOptimization()
+                        startWorker()
+                    } else {
+                        requestPermissionsAndStart()
+                    }
+                }
+            }
+            .setNegativeButton("Bekor", null)
+            .show()
+    }
+
+    // ---- MAJBURIY YANGILANISH ----
+
+    private fun checkForUpdate() {
+        if (updateDialog?.isShowing == true) return
+        Thread {
+            val info = ApiClient.getLatestVersion() ?: return@Thread
+            val latest = info.optInt("latest_code", 0)
+            val url = info.optString("url", "")
+            if (latest > BuildConfig.VERSION_CODE && url.isNotEmpty()) {
+                val name = info.optString("latest_name", "")
+                val force = info.optBoolean("force", false)
+                runOnUiThread { showUpdateDialog(name, url, force) }
+            }
+        }.start()
+    }
+
+    private fun showUpdateDialog(name: String, url: String, force: Boolean) {
+        if (isFinishing || updateDialog?.isShowing == true) return
+        val msg = "Yangi versiya" + (if (name.isNotEmpty()) " ($name)" else "") + " chiqdi." +
+            if (force) "\n\nDavom etish uchun yangilang." else ""
+        val b = AlertDialog.Builder(this)
+            .setTitle("⬆️ Yangilanish")
+            .setMessage(msg)
+            .setCancelable(!force)
+            .setPositiveButton("Yangilash") { _, _ ->
+                try { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) } catch (_: Exception) {}
+            }
+        if (!force) b.setNegativeButton("Keyinroq", null)
+        updateDialog = b.create()
+        updateDialog?.show()
+    }
+
+    // ---- WORKER / RUXSATLAR ----
 
     private fun requestPermissionsAndStart() {
         val needed = requiredPermissions.filter {
@@ -148,6 +232,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun startWorker() {
+        if (!ApiClient.hasKey()) { showKeyDialog(); return }
         val intent = Intent(this, SmsWorkerService::class.java)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             startForegroundService(intent)
@@ -163,7 +248,6 @@ class MainActivity : AppCompatActivity() {
         intent.action = SmsWorkerService.ACTION_STOP
         startService(intent)
         appendLog("🛑 Worker to'xtatildi")
-        // UI ni bir ozdan keyin yangilash
         btnToggle.postDelayed({ updateUI() }, 500)
     }
 
@@ -174,9 +258,9 @@ class MainActivity : AppCompatActivity() {
             btnToggle.text = "⏹  TO'XTATISH"
             btnToggle.setBackgroundColor(ContextCompat.getColor(this, android.R.color.holo_red_dark))
         } else {
-            tvStatus.text = "To'xtatilgan"
+            tvStatus.text = if (ApiClient.hasKey()) "To'xtatilgan" else "Kalit kiriting"
             statusDot.setBackgroundResource(R.drawable.dot_red)
-            btnToggle.text = "▶  ISHGA TUSHIRISH"
+            btnToggle.text = if (ApiClient.hasKey()) "▶  ISHGA TUSHIRISH" else "🔑  KALIT KIRITISH"
             btnToggle.setBackgroundColor(ContextCompat.getColor(this, android.R.color.holo_green_dark))
         }
         tvStats.text = "Yuborildi: ${SmsWorkerService.sentCount}  |  Xato: ${SmsWorkerService.failCount}"
