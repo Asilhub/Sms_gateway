@@ -96,8 +96,13 @@ kontaktlar, tungi rejim). Kontaktlar `.txt`/`.csv` fayl tashlab qo'shiladi.
 `sms.db`, `broadcast_state.txt`, `broadcast_config.json`, `night_mode.json`,
 `smart_break.txt`, `error_streak.txt`, `pending_msg_*.txt`, `status_*.txt`.
 
-## Ma'lum kamchiliklar (TODO)
-- Ilova SMS yuborilganini real tekshirmaydi (`PendingIntent` yo'q) — har doim "sent".
-- `ApiClient` da URL-encoding yo'q — maxsus belgili matnlar buziladi.
-- Botda SIM tanlash bor, lekin ilova `sim_slot` ni o'qimaydi.
-- 160-belgi cheklovi kirilcha matn uchun noto'g'ri (UCS-2 → 70 belgi).
+## O'zgarishlar (v0.0.2)
+- ✅ SMS endi `PendingIntent` (SENT) orqali **haqiqatda** tekshiriladi — "yolg'on sent" tugadi.
+- ✅ `ApiClient` da to'liq URL-encoding — maxsus belgili matn/raqamlar buzilmaydi.
+- ✅ SIM tanlash: ilova `get_task` javobidagi `sim_slot` ga qarab to'g'ri SIM'dan yuboradi.
+- ✅ Ketma-ket 5+ xatoda qurilma to'xtaydi ("SIM paketi tugagan bo'lishi mumkin") va behuda urinmaydi.
+
+## Qolgan ishlar (TODO)
+- SIM tanlash to'liq ishlashi uchun **server `get_task` javobiga `sim_slot` qo'shilishi** kerak
+  (qurilma config'idan). Hozircha server yubormasa default SIM ishlatiladi.
+- 160-belgi cheklovi kirilcha matn uchun noto'g'ri (UCS-2 → 70 belgi) — server tomonida.

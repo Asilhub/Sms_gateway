@@ -1,8 +1,10 @@
 package uz.idrokedu.smsgateway
 
 import android.app.*
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
@@ -10,8 +12,10 @@ import android.telephony.SmsManager
 import android.telephony.SubscriptionManager
 import android.util.Log
 import androidx.core.app.NotificationCompat
+import androidx.core.content.ContextCompat
 import kotlinx.coroutines.*
 import org.json.JSONObject
+import kotlin.coroutines.resume
 
 class SmsWorkerService : Service() {
 
@@ -20,6 +24,9 @@ class SmsWorkerService : Service() {
         const val CHANNEL_ID = "sms_gateway_channel"
         const val NOTIFICATION_ID = 1
         const val ACTION_STOP = "uz.idrokedu.smsgateway.STOP"
+
+        // Bir qurilma ketma-ket shuncha xato qilsa — SIM paketi tugagan deb hisoblab to'xtaydi
+        const val MAX_CONSECUTIVE_FAILS = 5
 
         var isRunning = false
         var sentCount = 0
@@ -52,6 +59,7 @@ class SmsWorkerService : Service() {
 
         startForeground(NOTIFICATION_ID, buildNotification("Ishlamoqda..."))
         isRunning = true
+        consecutiveFails = 0
 
         job = CoroutineScope(Dispatchers.IO).launch {
             log("✅ Worker ishga tushdi")
@@ -109,6 +117,8 @@ class SmsWorkerService : Service() {
         val id = response.optString("id", "")
         val phone = response.optString("phone", "")
         val message = response.optString("message", "")
+        // Server qurilma uchun SIM slotini bersa ishlatamiz (0 = default)
+        val simSlot = response.optInt("sim_slot", 0)
 
         if (id.isEmpty() || phone.isEmpty() || message.isEmpty()) {
             delay(5_000)
@@ -118,8 +128,8 @@ class SmsWorkerService : Service() {
         log("📤 → $phone (ID:$id)")
         updateNotification("📤 Yuborilmoqda: $phone")
 
-        // SMS yuborish
-        val sent = sendSms(phone, message)
+        // SMS yuborish — natijani PendingIntent orqali haqiqatda tekshiramiz
+        val sent = sendSms(phone, message, simSlot)
 
         if (sent) {
             ApiClient.updateTask(id, "sent", deviceId)
@@ -131,41 +141,138 @@ class SmsWorkerService : Service() {
             ApiClient.updateTask(id, "failed", deviceId)
             failCount++
             consecutiveFails++
-            log("❌ $phone (ID:$id)")
+            log("❌ $phone (ID:$id) [${consecutiveFails}/$MAX_CONSECUTIVE_FAILS]")
 
-            if (consecutiveFails >= 5) {
-                log("⚠️ 5 ta xato! 2 daq tanaffus")
-                updateNotification("⚠️ Tanaffus - ko'p xato")
-                delay(120_000)
-                consecutiveFails = 0
+            if (consecutiveFails >= MAX_CONSECUTIVE_FAILS) {
+                haltSimExhausted()
+                return
             }
         }
 
         delay(5_000)
     }
 
-    private fun sendSms(phone: String, message: String): Boolean {
-        return try {
-            val smsManager = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                getSystemService(SmsManager::class.java)
-            } else {
-                @Suppress("DEPRECATION")
-                SmsManager.getDefault()
-            }
+    /**
+     * Ketma-ket MAX_CONSECUTIVE_FAILS ta xatodan keyin: SIM paketi tugagan deb
+     * hisoblab, behuda urinmasdan to'xtaydi. Admin'ga xabar yuboriladi.
+     */
+    private fun haltSimExhausted() {
+        val msg = "⚠️ SIM paketi tugagan bo'lishi mumkin: ketma-ket $MAX_CONSECUTIVE_FAILS xato. Yuborish to'xtatildi."
+        log("🛑 $msg")
+        ApiClient.reportError(msg, deviceId)
 
-            val parts = smsManager.divideMessage(message)
-            if (parts.size == 1) {
-                smsManager.sendTextMessage(phone, null, message, null, null)
-            } else {
-                smsManager.sendMultipartTextMessage(phone, null, parts, null, null)
-            }
+        // Doimiy (ongoing emas) bildirishnoma qoldiramiz
+        val notif = NotificationCompat.Builder(this, CHANNEL_ID)
+            .setContentTitle("SMS Gateway — to'xtatildi")
+            .setContentText("SIM paketi tugagan bo'lishi mumkin. Qayta boshlash uchun ilovani oching.")
+            .setStyle(NotificationCompat.BigTextStyle().bigText(
+                "Ketma-ket $MAX_CONSECUTIVE_FAILS ta SMS yuborilmadi. SIM paketingiz tugagan bo'lishi mumkin.\n" +
+                "Tekshirib, ilovani ochib qayta ishga tushiring."))
+            .setSmallIcon(android.R.drawable.stat_notify_error)
+            .setAutoCancel(true)
+            .setContentIntent(openPendingIntent())
+            .build()
 
-            // SMS yuborilganini tekshirish uchun biroz kutish
-            Thread.sleep(3000)
-            true
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+            stopForeground(STOP_FOREGROUND_DETACH)
+        } else {
+            @Suppress("DEPRECATION") stopForeground(false)
+        }
+        getSystemService(NotificationManager::class.java).notify(NOTIFICATION_ID, notif)
+        stopSelf()
+    }
+
+    /**
+     * SMS yuboradi va PendingIntent (SENT) orqali HAQIQIY natijani kutadi.
+     * Hamma qism RESULT_OK bo'lsa true, aks holda (yoki timeout) false.
+     */
+    private suspend fun sendSms(phone: String, message: String, simSlot: Int): Boolean {
+        val smsManager = getSmsManagerForSlot(simSlot)
+        val parts = try {
+            smsManager.divideMessage(message)
         } catch (e: Exception) {
-            Log.e(TAG, "SMS send error: ${e.message}")
-            false
+            Log.e(TAG, "divideMessage error: ${e.message}")
+            return false
+        }
+        val total = parts.size
+        val action = "uz.idrokedu.smsgateway.SMS_SENT.${System.currentTimeMillis()}.${(0..99999).random()}"
+
+        return withTimeoutOrNull(45_000L) {
+            suspendCancellableCoroutine { cont ->
+                var received = 0
+                var allOk = true
+
+                val receiver = object : BroadcastReceiver() {
+                    override fun onReceive(c: Context?, i: Intent?) {
+                        received++
+                        if (resultCode != Activity.RESULT_OK) allOk = false
+                        if (received >= total) {
+                            try { unregisterReceiver(this) } catch (_: Exception) {}
+                            if (cont.isActive) cont.resume(allOk)
+                        }
+                    }
+                }
+
+                ContextCompat.registerReceiver(
+                    this@SmsWorkerService, receiver,
+                    IntentFilter(action), ContextCompat.RECEIVER_NOT_EXPORTED
+                )
+                cont.invokeOnCancellation {
+                    try { unregisterReceiver(receiver) } catch (_: Exception) {}
+                }
+
+                try {
+                    val sentIntents = ArrayList<PendingIntent>(total)
+                    for (idx in 0 until total) {
+                        sentIntents.add(
+                            PendingIntent.getBroadcast(
+                                this@SmsWorkerService, idx,
+                                Intent(action).setPackage(packageName),
+                                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                            )
+                        )
+                    }
+                    if (total == 1) {
+                        smsManager.sendTextMessage(phone, null, message, sentIntents[0], null)
+                    } else {
+                        smsManager.sendMultipartTextMessage(phone, null, parts, sentIntents, null)
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "SMS send error: ${e.message}")
+                    try { unregisterReceiver(receiver) } catch (_: Exception) {}
+                    if (cont.isActive) cont.resume(false)
+                }
+            }
+        } ?: false
+    }
+
+    /** Berilgan SIM slot (1/2) uchun SmsManager; topilmasa yoki 0 bo'lsa — default. */
+    private fun getSmsManagerForSlot(slot: Int): SmsManager {
+        if (slot in 1..2) {
+            try {
+                val sm = getSystemService(SubscriptionManager::class.java)
+                val targetIndex = slot - 1 // SIM 1 -> simSlotIndex 0
+                val info = sm?.activeSubscriptionInfoList
+                    ?.firstOrNull { it.simSlotIndex == targetIndex }
+                if (info != null) {
+                    return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                        getSystemService(SmsManager::class.java)
+                            .createForSubscriptionId(info.subscriptionId)
+                    } else {
+                        @Suppress("DEPRECATION")
+                        SmsManager.getSmsManagerForSubscriptionId(info.subscriptionId)
+                    }
+                }
+                log("⚠️ SIM $slot topilmadi, default ishlatildi")
+            } catch (e: Exception) {
+                Log.e(TAG, "SIM slot error: ${e.message}")
+            }
+        }
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            getSystemService(SmsManager::class.java)
+        } else {
+            @Suppress("DEPRECATION")
+            SmsManager.getDefault()
         }
     }
 
@@ -204,16 +311,18 @@ class SmsWorkerService : Service() {
         }
     }
 
+    private fun openPendingIntent(): PendingIntent {
+        val openIntent = Intent(this, MainActivity::class.java)
+        return PendingIntent.getActivity(
+            this, 0, openIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+    }
+
     private fun buildNotification(text: String): Notification {
         val stopIntent = Intent(this, SmsWorkerService::class.java).apply { action = ACTION_STOP }
         val stopPending = PendingIntent.getService(
             this, 0, stopIntent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
-
-        val openIntent = Intent(this, MainActivity::class.java)
-        val openPending = PendingIntent.getActivity(
-            this, 0, openIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
@@ -222,7 +331,7 @@ class SmsWorkerService : Service() {
             .setContentText(text)
             .setSmallIcon(android.R.drawable.ic_dialog_info)
             .setOngoing(true)
-            .setContentIntent(openPending)
+            .setContentIntent(openPendingIntent())
             .addAction(android.R.drawable.ic_delete, "To'xtatish", stopPending)
             .build()
     }

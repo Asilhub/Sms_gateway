@@ -21,8 +21,8 @@ android {
         applicationId = "uz.idrokedu.smsgateway"
         minSdk = 24
         targetSdk = 34
-        versionCode = 1
-        versionName = "3.0"
+        versionCode = 2
+        versionName = "0.0.2"
 
         buildConfigField("String", "API_KEY", "\"${keyProp("API_KEY")}\"")
         buildConfigField("String", "SERVER", "\"${keyProp("SERVER")}\"")

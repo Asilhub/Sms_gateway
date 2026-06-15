@@ -26,10 +26,15 @@ Ta'lim kompaniyasi (idrokedu.uz) o'z kontaktlariga ommaviy SMS yuborish uchun is
 - Android: `cd sms-gateway-app && ./gradlew assembleDebug`
 - Backend: PHP serverga `webhook.php` + `config.php` qo'yiladi; jadvallar avtomatik yaratiladi.
 
-## Hal qilinmagan kamchiliklar (kelajakdagi ish)
-1. SMS real yetkazilganini tekshirish yo'q — `SmsWorkerService.sendSms` `PendingIntent`siz
-   `Thread.sleep(3000)` qilib har doim `true` qaytaradi.
-2. `ApiClient.call` URL-encoding qilmaydi — `msg`/`phone` maxsus belgilarda buziladi.
-3. SIM tanlash yarim: bazada `sim_slot` bor, ilova o'qimaydi.
-4. 160-belgi cheklovi kirilcha (UCS-2, 70 belgi) uchun noto'g'ri.
-5. `.htaccess` `sms.db-wal` ni bloklamaydi (kengaytma `.db` bilan tugamaydi).
+## v0.0.2 da tuzatilgan (app)
+1. ✅ SMS real yetkazildi: `sendSms` endi PendingIntent (SENT) natijasiga qarab true/false.
+2. ✅ `ApiClient.call` to'liq URL-encode qiladi (map asosida).
+3. ✅ SIM tanlash: `get_task` javobidagi `sim_slot` (optInt) ga qarab SubscriptionManager.
+4. ✅ Ketma-ket 5+ xato → `haltSimExhausted()` (to'xtaydi, admin'ga xabar).
+
+## Hal qilinmagan (kelajakdagi ish)
+1. **Server `get_task` javobiga `sim_slot` qo'shish** kerak — aks holda ilova doim default SIM.
+   (FTP olgach server tomonda qo'shiladi.)
+2. 160-belgi cheklovi kirilcha (UCS-2, 70 belgi) uchun noto'g'ri — server tomonida.
+3. `.htaccess` `sms.db-wal` ni bloklamaydi (kengaytma `.db` bilan tugamaydi).
+4. API kalit rotatsiyasi (server config.php + CRM) — [[sms-gateway-github-setup]] ga qarang.
