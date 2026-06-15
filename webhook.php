@@ -601,7 +601,7 @@ if (isset($_GET['action']) && in_array($_GET['action'], ['send', 'check_status',
     if ($action == 'stats') {
         $stats = $db->query("SELECT status, COUNT(*) as cnt FROM queue GROUP BY status")->fetchAll(PDO::FETCH_KEY_PAIR);
         $devices = getOnlineDevices();
-        echo json_encode([
+        $out = [
             'status' => 'ok',
             'queue' => [
                 'pending' => $stats['pending'] ?? 0,
@@ -609,7 +609,25 @@ if (isset($_GET['action']) && in_array($_GET['action'], ['send', 'check_status',
                 'failed' => $stats['failed'] ?? 0
             ],
             'online_devices' => count($devices)
-        ]);
+        ];
+        // Batafsil qurilmalar ro'yxati (diagnostika uchun) — ?devices=1
+        if (!empty($_GET['devices'])) {
+            $list = [];
+            foreach (getAllDevices() as $d) {
+                $list[] = [
+                    'device_id' => $d['device_id'],
+                    'name' => $d['name'],
+                    'online' => isDeviceOnline($d) ? 1 : 0,
+                    'active' => (int)$d['is_active'],
+                    'last_seen_ago_s' => time() - (int)($d['last_seen'] ?? 0),
+                    'app' => (int)($d['app_version'] ?? 0),
+                    'sent' => (int)$d['tasks_sent'],
+                    'failed' => (int)$d['tasks_failed'],
+                ];
+            }
+            $out['devices'] = $list;
+        }
+        echo json_encode($out, JSON_UNESCAPED_UNICODE);
         exit;
     }
 }
@@ -1216,30 +1234,12 @@ if (isset($update['callback_query'])) {
 
         if (strpos($data, "dev_del_") === 0) {
             $did = str_replace("dev_del_", "", $data);
+            $wasOnline = ($d = getDevice($did)) && isDeviceOnline($d);
             $db->prepare("DELETE FROM devices WHERE device_id=?")->execute([$did]);
-            answerCallback($cb['id'], "🗑 O'chirildi");
-            // Show device list
-            $data = "dev_list";
-            // Re-trigger dev_list
-            $devices = getAllDevices();
-            if (empty($devices)) {
-                editMessage($chat_id, $msg_id, "📱 Qurilmalar ro'yxati bo'sh.", [
-                    'inline_keyboard' => [[['text' => "🔙 Ortga", 'callback_data' => "dev_back"]]]
-                ], "HTML");
-            }
-            else {
-                // redirect to dev_list
-                $msg = "📱 <b>QURILMALAR</b>\n\n";
-                $buttons = [];
-                foreach ($devices as $d) {
-                    $icon = ($d['is_active'] && isDeviceOnline($d)) ? "🟢" : ($d['is_active'] ? "🟡" : "🔴");
-                    $name = $d['name'] ?: $d['device_id'];
-                    $msg .= "$icon <b>$name</b> — " . getLastSeenText($d['last_seen']) . "\n";
-                    $buttons[] = [['text' => "$icon $name", 'callback_data' => "dev_" . $d['device_id']]];
-                }
-                $buttons[] = [['text' => "🔙 Ortga", 'callback_data' => "dev_back"]];
-                editMessage($chat_id, $msg_id, $msg, ['inline_keyboard' => $buttons], "HTML");
-            }
+            // Onlayn (tirik) qurilma o'chirilsa, keyingi signalda qaytadi — shuni ogohlantiramiz.
+            answerCallback($cb['id'], $wasOnline ? "🗑 O'chirildi — lekin telefon yoniq bo'lsa qaytadi" : "🗑 O'chirildi");
+            $dl = buildDeviceList();
+            editMessage($chat_id, $msg_id, $dl['text'], $dl['kb'] ?: ['inline_keyboard' => [[['text' => "🔙 Ortga", 'callback_data' => "dev_back"]]]], "HTML");
             exit;
         }
 
