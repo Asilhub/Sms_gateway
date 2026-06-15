@@ -13,7 +13,10 @@ return [
     // Botni boshqara oladigan admin Telegram ID lari (@userinfobot dan oling)
     'admin_ids' => [111111111, 222222222],
 
-    // Qurilma/CRM API uchun maxfiy kalit — UZUN va TASODIFIY qiling!
-    // Masalan: bin2hex(random_bytes(16)) natijasini ishlatishingiz mumkin.
-    'api_key'   => 'BU_YERGA_UZUN_TASODIFIY_KALIT',
+    // Qurilma/CRM API kalitlari (massiv). Birinchisi — asosiy.
+    // Bir nechta kalit qo'llab-quvvatlanadi (kalit almashtirish/migratsiya uchun).
+    // UZUN va TASODIFIY qiling, masalan: bin2hex(random_bytes(24)).
+    'api_keys'  => [
+        'BU_YERGA_UZUN_TASODIFIY_KALIT',
+    ],
 ];

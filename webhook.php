@@ -13,7 +13,10 @@ if (!file_exists($config_file)) {
 $config = require $config_file;
 $bot_token = $config['bot_token'];
 $admin_ids = $config['admin_ids'];
-$api_key   = $config['api_key'];
+// Migratsiya uchun bir nechta kalit qo'llab-quvvatlanadi (birinchisi — asosiy/yangi)
+$api_keys  = $config['api_keys'] ?? [$config['api_key'] ?? ''];
+$api_key   = $api_keys[0];
+function keyValid($k) { global $api_keys; return in_array((string)$k, $api_keys, true); }
 
 // Fayllar
 $db_file = __DIR__ . '/sms.db';
@@ -365,7 +368,7 @@ function alertAdmins($text)
 // ============ CRM API (Tashqi integratsiya) ============
 if (isset($_GET['action']) && in_array($_GET['action'], ['send', 'check_status', 'stats'])) {
     header('Content-Type: application/json');
-    if (($_GET['key'] ?? '') !== $api_key) {
+    if (!keyValid($_GET['key'] ?? '')) {
         http_response_code(403);
         echo json_encode(['status' => 'error', 'message' => 'Unauthorized']);
         exit;
@@ -422,7 +425,7 @@ if (isset($_GET['action']) && in_array($_GET['action'], ['send', 'check_status',
 // Eski metod uchun (agar kimdir ishlatayotgan bo'lsa)
 if (isset($_GET['phone']) && isset($_GET['text']) && !isset($_GET['action'])) {
     header('Content-Type: application/json');
-    if (($_GET['key'] ?? '') === $api_key) {
+    if (keyValid($_GET['key'] ?? '')) {
         $phone = formatPhone($_GET['phone']);
         $text = trim($_GET['text']);
         $stmt = $db->prepare("INSERT INTO queue (phone, message, status) VALUES (:p, :m, 'test_pending')");
@@ -439,7 +442,7 @@ if (isset($_GET['action'])) {
     header('Content-Type: application/json');
 
     // Key tekshirish
-    if ($key !== $api_key && $action !== 'heartbeat') {
+    if (!keyValid($key) && $action !== 'heartbeat') {
         http_response_code(401);
         echo json_encode(["status" => "error", "message" => "Unauthorized"]);
         exit;
@@ -494,12 +497,10 @@ if (isset($_GET['action'])) {
         if ($device_id)
             updateHeartbeat($device_id);
 
-        if ($device_id) {
-            $dev = getDevice($device_id);
-            if ($dev && !$dev['is_active']) {
-                echo json_encode(["status" => "empty", "reason" => "device_disabled"]);
-                exit;
-            }
+        $dev = $device_id ? getDevice($device_id) : null;
+        if ($dev && !$dev['is_active']) {
+            echo json_encode(["status" => "empty", "reason" => "device_disabled"]);
+            exit;
         }
 
         recoverStuckTasks();
@@ -577,7 +578,13 @@ if (isset($_GET['action'])) {
             exit;
         }
 
-        echo json_encode($task ?: ["status" => "empty"]);
+        if ($task) {
+            // Ilova qaysi SIM'dan yuborishini bilishi uchun qurilma sim_slot ini qo'shamiz
+            $task['sim_slot'] = (int)($dev['sim_slot'] ?? 0);
+            echo json_encode($task);
+        } else {
+            echo json_encode(["status" => "empty"]);
+        }
         exit;
     }
 
