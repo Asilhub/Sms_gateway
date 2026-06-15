@@ -89,13 +89,41 @@ Barcha so'rovlar `?key=<API_KEY>` talab qiladi.
 `heartbeat`, `get_task`, `update`, `incoming_sms`, `incoming_call`, `error`.
 
 ## Telegram bot
-Admin menyusi: **Broadcast** (ommaviy yuborish), **Status**, **Qurilmalar**
-(boshqarish, SIM tanlash, nom), **Boshqaruv** (pauza/davom/to'xtatish, test SMS,
-kontaktlar, tungi rejim). Kontaktlar `.txt`/`.csv` fayl tashlab qo'shiladi.
+Asosiy menyu: **✉️ Ommaviy SMS** (broadcast), **📊 Holat**, **🧪 Test SMS**,
+**📱 Qurilmalar**, **📂 Kontaktlar**, **🌙 Tungi rejim**, **🗑️ Tozalash**.
+
+- **📊 Holat** — jonli dashboard: progress-bar (sent/failed/qoldi), onlayn qurilmalar va
+  inline tugmalar (⏸ Pauza / ▶️ Davom / 🔄 Yangilash / 🛑 To'xtatish). Broadcast boshlangach
+  shu karta darhol ko'rsatiladi va 🔄 bilan yangilab borasiz.
+- **📱 Qurilmalar** — ixcham ro'yxat (har qurilma 1 ta tugma), "🧹 Oflaynlarni o'chirish"
+  (eski/takror qurilmalar). Qurilmani tanlab: SIM, nom, yoqish/o'chirish, statistika.
+  Yuborish qurilmasini tanlash (Hammasi / Teng bo'lib / bitta) faqat 2+ qurilmada chiqadi.
+- Kontaktlar `.txt`/`.csv` fayl tashlab qo'shiladi.
 
 ## Holat fayllari (runtime, git'da yo'q)
-`sms.db`, `broadcast_state.txt`, `broadcast_config.json`, `night_mode.json`,
-`smart_break.txt`, `error_streak.txt`, `pending_msg_*.txt`, `status_*.txt`.
+`sms.db`, `broadcast_state.txt`, `broadcast_config.json`, `broadcast_batch.json`,
+`night_mode.json`, `smart_break.txt`, `error_streak.txt`, `pending_msg_*.txt`, `status_*.txt`.
+
+## O'zgarishlar (v0.5.0)
+- ✅ **Barqaror qurilma ID** — `ANDROID_ID` asosida; qayta o'rnatishda ham bir xil, botda
+  takror qurilma chiqmaydi. Mavjud ID lar saqlanadi.
+- ✅ **Jonli HOLAT dashboard** — progress-bar + inline ⏸/▶️/🔄/🛑; broadcast boshlangach darhol chiqadi.
+- ✅ **Ixcham qurilmalar** ro'yxati + "🧹 Oflaynlarni o'chirish"; "Teng bo'lib" izohi, target faqat 2+ qurilmada.
+- ✅ Soddalashtirilgan asosiy menyu (pauza/stop endi Holat kartasida, doimiy klaviaturada emas).
+
+## O'zgarishlar (v0.4.0)
+- ✅ **Launcher icon tuzatildi** — avval hamma telefonda oppoq edi; endi to'liq adaptive icon
+  (gradient fon + chat-pufakcha), eski Android uchun fallback.
+- ✅ **Yangi UI** — gradient header, status kartasi, Yuborildi/Xato statistika kartalari,
+  play/stop ikonkali tugma, yumaloq terminal-jurnal.
+- ✅ **Sozlamalar menyusi** (⚙️) — kalit, yangilanish, batareya, bildirishnoma, qurilma ID
+  nusxalash, jurnal tozalash, ilova haqida. Material vektor ikonkalar.
+
+## O'zgarishlar (v0.3.0)
+- ✅ **Emoji tuzatildi** — emoji-li SMS to'g'ri yetkaziladi (server `JSON_UNESCAPED_UNICODE` + `charset=utf-8`).
+- ✅ **160 → 800 belgi** — uzun matn bir nechta SMS (multipart) sifatida ketadi; bot SMS sonini ko'rsatadi.
+- ✅ **Eski `1206` kaliti olib tashlandi** — endi faqat asosiy API kalit ishlaydi.
+- ✅ Ilova: ekranda versiya, qo'lda yangilanish tekshirish.
 
 ## O'zgarishlar (v0.2.0)
 - ✅ **To'liq avtomatik yangilanish** — "Yangilash" bosilganda ilova APK'ni o'zi yuklab,
@@ -117,5 +145,5 @@ kontaktlar, tungi rejim). Kontaktlar `.txt`/`.csv` fayl tashlab qo'shiladi.
 - ✅ Ketma-ket 5+ xatoda qurilma to'xtaydi ("SIM paketi tugagan bo'lishi mumkin") va behuda urinmaydi.
 
 ## Qolgan ishlar (TODO)
-- 160-belgi cheklovi kirilcha matn uchun noto'g'ri (UCS-2 → 70 belgi) — server tomonida.
-- Barcha telefonlar v0.1.0 ga o'tgach, `config.php` `api_keys` dan eski `1206` ni olib tashlash.
+- Eski (v0.0.1) telefonlar majburiy-yangilanish kodiga ega emas — bir marta qo'lda v0.5.0
+  o'rnatish kerak; keyin force-update orqali o'zi yangilanadi.
