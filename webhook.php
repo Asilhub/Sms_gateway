@@ -55,6 +55,18 @@ try {
     if (!in_array('updated_at', $cols)) {
         $db->exec("ALTER TABLE queue ADD COLUMN updated_at DATETIME DEFAULT CURRENT_TIMESTAMP");
     }
+    // FAILOVER uchun: necha marta urinilgan, qaysi qurilmalar xato qaytargan, OTP/ustuvormi
+    if (!in_array('attempts', $cols)) {
+        $db->exec("ALTER TABLE queue ADD COLUMN attempts INTEGER DEFAULT 0");
+    }
+    if (!in_array('failed_devices', $cols)) {
+        // ',dev1,dev2,' ko'rinishida (vergul bilan o'ralgan) — aniq moslik uchun
+        $db->exec("ALTER TABLE queue ADD COLUMN failed_devices TEXT DEFAULT ''");
+    }
+    if (!in_array('is_priority', $cols)) {
+        // 1 = CRM/OTP (test_pending), 0 = ommaviy (pending). Requeue'da statusni tiklash uchun.
+        $db->exec("ALTER TABLE queue ADD COLUMN is_priority INTEGER DEFAULT 0");
+    }
 
     $db->exec("CREATE INDEX IF NOT EXISTS idx_queue_status ON queue(status)");
     $db->exec("CREATE INDEX IF NOT EXISTS idx_queue_status_device ON queue(status, assigned_device)");
@@ -299,10 +311,19 @@ function getSmartBreakRemaining()
     return $r > 0 ? $r : 0;
 }
 
+// Bitta SMS uchun maksimal urinishlar (cheksiz aylanishdan himoya). Amalda
+// failed_devices ro'yxati tufayli urinishlar onlayn qurilmalar soni bilan cheklanadi.
+define('MAX_SEND_ATTEMPTS', 6);
+
 function recoverStuckTasks()
 {
     global $db;
-    $db->exec("UPDATE queue SET status='pending', assigned_device=NULL, updated_at=CURRENT_TIMESTAMP
+    // Qurilma vazifani olib, javob bermay yo'qolsa (processing'da tiqilib qolsa) —
+    // qayta navbatga qaytaramiz. is_priority=1 bo'lsa OTP sifatida (test_pending),
+    // aks holda ommaviy (pending). failed_devices saqlanadi — xato qurilmalar takror olmaydi.
+    $db->exec("UPDATE queue
+               SET status = CASE WHEN is_priority=1 THEN 'test_pending' ELSE 'pending' END,
+                   assigned_device=NULL, updated_at=CURRENT_TIMESTAMP
                WHERE status='processing' AND updated_at < datetime('now', '-120 seconds')");
 }
 
@@ -577,9 +598,19 @@ if (isset($_GET['action']) && in_array($_GET['action'], ['send', 'check_status',
             exit;
         }
 
-        $stmt = $db->prepare("INSERT INTO queue (phone, message, status) VALUES (:p, :m, 'test_pending')");
+        $stmt = $db->prepare("INSERT INTO queue (phone, message, status, is_priority) VALUES (:p, :m, 'test_pending', 1)");
         $stmt->execute([':p' => $phone, ':m' => $text]);
-        echo json_encode(['status' => 'ok', 'id' => $db->lastInsertId()]);
+        // CRM darhol bilsin: yetkaziladimi (onlayn qurilma bormi) va necha SMS bo'ladi.
+        // 'test_pending' har doim broadcast'dan oldin va tungi rejimda ham olinadi (OTP 24/7).
+        $online = count(getOnlineDevices());
+        echo json_encode([
+            'status'         => 'ok',
+            'id'             => $db->lastInsertId(),
+            'phone'          => $phone,
+            'segments'       => smsSegments($text),  // matn necha SMS bo'lib ketadi
+            'online_devices' => $online,
+            'deliverable'    => $online > 0,         // false bo'lsa: qurilma onlayn bo'lguncha navbatda turadi
+        ], JSON_UNESCAPED_UNICODE);
         exit;
     }
 
@@ -593,7 +624,15 @@ if (isset($_GET['action']) && in_array($_GET['action'], ['send', 'check_status',
             echo json_encode(['status' => 'error', 'message' => 'Not found']);
             exit;
         }
-        echo json_encode(['status' => 'ok', 'sms_status' => $res['status'], 'updated_at' => $res['updated_at']]);
+        $s = $res['status'];
+        echo json_encode([
+            'status'     => 'ok',
+            'sms_status' => $s,                                              // test_pending|processing|sent|failed
+            'delivered'  => $s === 'sent',
+            'pending'    => in_array($s, ['pending', 'test_pending', 'processing'], true),
+            'failed'     => $s === 'failed',
+            'updated_at' => $res['updated_at'],
+        ]);
         exit;
     }
 
@@ -601,14 +640,26 @@ if (isset($_GET['action']) && in_array($_GET['action'], ['send', 'check_status',
     if ($action == 'stats') {
         $stats = $db->query("SELECT status, COUNT(*) as cnt FROM queue GROUP BY status")->fetchAll(PDO::FETCH_KEY_PAIR);
         $devices = getOnlineDevices();
+        $online = count($devices);
+        // Eng eski yuborilmagan SMS qancha vaqt kutyapti (tiqilib qolishni aniqlash uchun)
+        $oldest = $db->query("SELECT MIN(created_at) FROM queue WHERE status IN ('pending','test_pending','processing')")->fetchColumn();
+        $oldestAge = $oldest ? max(0, time() - strtotime($oldest . ' UTC')) : 0;
         $out = [
             'status' => 'ok',
+            // CRM bitta shu maydonga qarab "hammasi joyidami?" ni biladi:
+            // kamida 1 qurilma onlayn → tizim SMS (OTP) yetkaza oladi.
+            'ready'  => $online > 0,
+            'online_devices' => $online,
             'queue' => [
-                'pending' => $stats['pending'] ?? 0,
-                'sent' => $stats['sent'] ?? 0,
-                'failed' => $stats['failed'] ?? 0
+                'pending'     => $stats['pending'] ?? 0,        // ommaviy navbat
+                'otp_pending' => $stats['test_pending'] ?? 0,   // CRM/OTP navbatda kutayotgani
+                'processing'  => $stats['processing'] ?? 0,     // qurilmaga berilgan, yuborilmoqda
+                'sent'        => $stats['sent'] ?? 0,
+                'failed'      => $stats['failed'] ?? 0,
             ],
-            'online_devices' => count($devices)
+            'oldest_pending_age_s' => $oldestAge,               // 0 = navbat bo'sh; katta son = tiqilish
+            'night_mode'  => isNightModeActive(),               // true: ommaviy to'xtagan (OTP baribir ketadi)
+            'smart_break' => isSmartBreakActive(),              // true: ketma-ket xato → vaqtincha dam
         ];
         // Batafsil qurilmalar ro'yxati (diagnostika uchun) — ?devices=1
         if (!empty($_GET['devices'])) {
@@ -638,7 +689,7 @@ if (isset($_GET['phone']) && isset($_GET['text']) && !isset($_GET['action'])) {
     if (keyValid($_GET['key'] ?? '')) {
         $phone = formatPhone($_GET['phone']);
         $text = trim($_GET['text']);
-        $stmt = $db->prepare("INSERT INTO queue (phone, message, status) VALUES (:p, :m, 'test_pending')");
+        $stmt = $db->prepare("INSERT INTO queue (phone, message, status, is_priority) VALUES (:p, :m, 'test_pending', 1)");
         $stmt->execute([':p' => $phone, ':m' => $text]);
         echo json_encode(['status' => 'ok', 'id' => $db->lastInsertId()]);
         exit;
@@ -741,6 +792,9 @@ if (isset($_GET['action'])) {
             if ($device_id) {
                 $sql .= " AND (assigned_device IS NULL OR assigned_device=?)";
                 $params[] = $device_id;
+                // FAILOVER: bu qurilma allaqachon xato qaytargan SMS unga qayta berilmaydi
+                $sql .= " AND failed_devices NOT LIKE ?";
+                $params[] = '%,' . $device_id . ',%';
             }
             $sql .= " LIMIT 1";
             $stmt = $db->prepare($sql);
@@ -764,6 +818,11 @@ if (isset($_GET['action'])) {
                     if ($deviceMode === 'round_robin' && $device_id) {
                         $deviceFilterSQL = " AND (assigned_device IS NULL OR assigned_device=?)";
                         $filterParams[] = $device_id;
+                    }
+                    // FAILOVER: bu qurilma xato qaytargan broadcast SMS unga qayta berilmaydi
+                    if ($device_id) {
+                        $deviceFilterSQL .= " AND failed_devices NOT LIKE ?";
+                        $filterParams[] = '%,' . $device_id . ',%';
                     }
 
                     if ($mode == "random") {
@@ -815,45 +874,87 @@ if (isset($_GET['action'])) {
         exit;
     }
 
-    // ============ STATUS YANGILASH ============
+    // ============ STATUS YANGILASH (FAILOVER bilan) ============
     if ($action == 'update') {
-        $id = $_GET['id'] ?? 0;
+        $id = (int)($_GET['id'] ?? 0);
         $status = $_GET['status'] ?? '';
         $device_id = $_GET['device_id'] ?? null;
 
-        if (!$id || !in_array($status, ['sent', 'failed'])) {
+        if (!$id || !in_array($status, ['sent', 'failed'], true)) {
             echo json_encode(["status" => "error", "message" => "Invalid params"]);
             exit;
         }
 
-        $db->prepare("UPDATE queue SET status=?, updated_at=CURRENT_TIMESTAMP WHERE id=?")->execute([$status, $id]);
-
-        // Qurilma statistikasini yangilash
-        if ($device_id) {
-            if ($status == 'sent') {
+        // ----- MUVAFFAQIYAT: yakuniy holat -----
+        if ($status == 'sent') {
+            $db->prepare("UPDATE queue SET status='sent', updated_at=CURRENT_TIMESTAMP WHERE id=?")->execute([$id]);
+            if ($device_id) {
                 $db->prepare("UPDATE devices SET tasks_sent = tasks_sent + 1 WHERE device_id=?")->execute([$device_id]);
             }
-            else {
-                $db->prepare("UPDATE devices SET tasks_failed = tasks_failed + 1 WHERE device_id=?")->execute([$device_id]);
-            }
+            file_put_contents($GLOBALS['streak_file'], 0);  // muvaffaqiyat → xato seriyasini nolga tushiramiz
+            echo json_encode(["status" => "ok"]);
+            exit;
         }
 
-        // Smart Break
-        if ($status == 'failed') {
-            $streak = file_exists($GLOBALS['streak_file']) ? (int)file_get_contents($GLOBALS['streak_file']) : 0;
-            $streak++;
-            file_put_contents($GLOBALS['streak_file'], $streak);
-            if ($streak >= 10) {
-                file_put_contents($GLOBALS['smart_break_file'], time() + 300);
-                file_put_contents($GLOBALS['streak_file'], 0);
-                alertAdmins("😴 <b>SMART BREAK</b>\n\nKetma-ket 10 xato! 5 daq dam olish.\n📱 Qurilma: <code>" . e($device_id ?? '?') . "</code>");
-            }
+        // ----- XATO: avval boshqa qurilmaga o'tkazib ko'ramiz (FAILOVER) -----
+        // Bu qurilma haqiqatan xato qildi → uning statistikasi oshadi
+        if ($device_id) {
+            $db->prepare("UPDATE devices SET tasks_failed = tasks_failed + 1 WHERE device_id=?")->execute([$device_id]);
         }
-        else {
+
+        $stmt = $db->prepare("SELECT attempts, failed_devices, is_priority FROM queue WHERE id=?");
+        $stmt->execute([$id]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        if (!$row) {  // SMS topilmadi (allaqachon tozalangan)
+            echo json_encode(["status" => "ok"]);
+            exit;
+        }
+
+        $attempts = (int)$row['attempts'] + 1;
+        // failed_devices ni ',dev1,dev2,' ko'rinishida saqlaymiz (aniq moslik uchun)
+        $failed = $row['failed_devices'] !== '' ? $row['failed_devices'] : ',';
+        if ($device_id && strpos($failed, ',' . $device_id . ',') === false) {
+            $failed .= $device_id . ',';
+        }
+
+        // Hali urinib ko'rilmagan ONLAYN+FAOL qurilma bormi?
+        $remaining = 0;
+        foreach (getOnlineDevices() as $d) {
+            if (strpos($failed, ',' . $d['device_id'] . ',') === false)
+                $remaining++;
+        }
+
+        if ($remaining > 0 && $attempts < MAX_SEND_ATTEMPTS) {
+            // FAILOVER: boshqa qurilmaga qayta navbatga qo'yamiz. Hali 'failed' EMAS.
+            // OTP/CRM (is_priority=1) → test_pending; ommaviy → pending.
+            $newStatus = ((int)$row['is_priority'] === 1) ? 'test_pending' : 'pending';
+            $db->prepare("UPDATE queue SET status=?, assigned_device=NULL, attempts=?, failed_devices=?, updated_at=CURRENT_TIMESTAMP WHERE id=?")
+               ->execute([$newStatus, $attempts, $failed, $id]);
+            // Smart-break seriyasi OSHMAYDI — bu yakuniy xato emas, qayta urinish.
+            echo json_encode(["status" => "ok", "retry" => true, "attempts" => $attempts, "remaining_devices" => $remaining]);
+            exit;
+        }
+
+        // ----- YAKUNIY XATO: barcha onlayn qurilmalar urinib ko'rdi (yoki limit) -----
+        $db->prepare("UPDATE queue SET status='failed', attempts=?, failed_devices=?, updated_at=CURRENT_TIMESTAMP WHERE id=?")
+           ->execute([$attempts, $failed, $id]);
+
+        // Smart break: faqat YAKUNIY xato hisoblanadi
+        $streak = file_exists($GLOBALS['streak_file']) ? (int)file_get_contents($GLOBALS['streak_file']) : 0;
+        $streak++;
+        file_put_contents($GLOBALS['streak_file'], $streak);
+        if ($streak >= 10) {
+            file_put_contents($GLOBALS['smart_break_file'], time() + 300);
             file_put_contents($GLOBALS['streak_file'], 0);
+            alertAdmins("😴 <b>SMART BREAK</b>\n\nKetma-ket 10 yakuniy xato! 5 daq dam olish.");
+        }
+        // OTP yetkazilmasa admin'ni xabardor qilamiz (ommaviy SMS uchun spam bo'lmasin deb jim)
+        if ((int)$row['is_priority'] === 1) {
+            $triedCount = max(0, substr_count($failed, ',') - 1);
+            alertAdmins("❌ <b>OTP/CRM SMS yetkazilmadi</b> · #$id\n📱 $triedCount qurilma urinib ko'rdi — hammasi xato.\nRaqam yoki SIM balansini tekshiring.");
         }
 
-        echo json_encode(["status" => "ok"]);
+        echo json_encode(["status" => "ok", "final_failed" => true, "attempts" => $attempts]);
         exit;
     }
 
@@ -1545,7 +1646,7 @@ if (isset($update['message'])) {
             sendMessage($chat_id, "⚠️ Noto'g'ri ma'lumot!", ['remove_keyboard' => true]);
             exit;
         }
-        $db->prepare("INSERT INTO queue (phone, message, status) VALUES (?,?,'test_pending')")->execute([$phone, $message]);
+        $db->prepare("INSERT INTO queue (phone, message, status, is_priority) VALUES (?,?,'test_pending',1)")->execute([$phone, $message]);
         @unlink($status_file);
         sendMessage($chat_id, "✅ Test SMS navbatga qo'shildi\n📞 <code>" . e($phone) . "</code>\n📝 <code>" . e($message) . "</code>", controlKeyboard(), "HTML");
     }

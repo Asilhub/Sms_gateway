@@ -77,16 +77,40 @@ boshqariladi, tashqi CRM tizimlaridan API orqali SMS yuborish imkonini beradi.
 
 ## API (CRM integratsiyasi)
 
-Barcha so'rovlar `?key=<API_KEY>` talab qiladi.
+Base URL: `https://sms.idrokedu.uz/webhook.php` · barcha so'rovlar `?key=<API_KEY>` talab qiladi (aks holda `403`).
+O'quv markaz CRM'i o'quvchilarga xabar va **tasdiqlash kodlari (OTP)** yuborish uchun ishlatadi.
 
-| Action | Misol | Tavsif |
-|---|---|---|
-| `send` | `?action=send&key=KEY&phone=+998...&text=Salom` | Navbatga SMS qo'shadi, `id` qaytaradi |
-| `check_status` | `?action=check_status&key=KEY&id=123` | SMS holatini tekshiradi |
-| `stats` | `?action=stats&key=KEY` | Navbat va onlayn qurilmalar statistikasi |
+### 1. `send` — SMS/OTP yuborish
+`?action=send&key=KEY&phone=998901234567&text=Kod:%201234`
+```json
+{ "status":"ok", "id":143, "phone":"+998901234567",
+  "segments":1, "online_devices":2, "deliverable":true }
+```
+`deliverable:false` → hech qurilma onlayn emas, SMS qurilma ulanmaguncha navbatda turadi.
+
+### 2. `check_status` — yetkazildimi
+`?action=check_status&key=KEY&id=143`
+```json
+{ "status":"ok", "sms_status":"sent",
+  "delivered":true, "pending":false, "failed":false, "updated_at":"..." }
+```
+`pending:true` = navbatda/urinilmoqda (failover davom etyapti) · `failed:true` = barcha qurilma urinib bo'lmadi.
+
+### 3. `stats` — tizim sog'ligi
+`?action=stats&key=KEY` (`&devices=1` — har qurilma batafsil)
+```json
+{ "status":"ok", "ready":true, "online_devices":2,
+  "queue":{ "pending":0, "otp_pending":0, "processing":0, "sent":1240, "failed":3 },
+  "oldest_pending_age_s":0, "night_mode":false, "smart_break":false }
+```
+`ready` = kamida 1 qurilma onlayn (yuborish mumkin) · `oldest_pending_age_s` katta bo'lsa = tiqilish.
+
+### FAILOVER (avtomatik)
+Qurilma SMS yubora olmasa, tizim uni **boshqa onlayn qurilmaga** o'tkazadi (xato qurilma o'sha SMS'ni
+qayta olmaydi). **Faqat barcha qurilma urinib bo'lmaganda** `failed` bo'ladi (OTP uchun admin'ga ogohlantirish).
 
 ### Qurilma API (ilova ishlatadi)
-`heartbeat`, `get_task`, `update`, `incoming_sms`, `incoming_call`, `error`.
+`heartbeat`, `get_task`, `update`, `incoming_sms`, `incoming_call`, `error`, `version`.
 
 ## Telegram bot
 Asosiy menyu: **✉️ Ommaviy SMS** (broadcast), **📊 Holat**, **🧪 Test SMS**,
@@ -103,6 +127,13 @@ Asosiy menyu: **✉️ Ommaviy SMS** (broadcast), **📊 Holat**, **🧪 Test SM
 ## Holat fayllari (runtime, git'da yo'q)
 `sms.db`, `broadcast_state.txt`, `broadcast_config.json`, `broadcast_batch.json`,
 `night_mode.json`, `smart_break.txt`, `error_streak.txt`, `pending_msg_*.txt`, `status_*.txt`.
+
+## O'zgarishlar (v0.6.0) — server
+- ✅ **Avtomatik FAILOVER** — bitta qurilma yubora olmasa, SMS boshqa onlayn qurilmaga o'tadi;
+  faqat hammasi urinib bo'lmaganda `failed`. OTP'lar `recoverStuckTasks`'da broadcast'ga tushmaydi.
+- ✅ **CRM API kuchaytirildi** — `send`: `deliverable`/`online_devices`/`segments`;
+  `check_status`: `delivered`/`pending`/`failed`; `stats`: `ready`/`otp_pending`/`oldest_pending_age_s`/`night_mode`/`smart_break`.
+- ✅ **`deploy.sh`** — FTP orqali bir buyruq bilan deploy (login/parol `.deploy.env`, git'da yo'q).
 
 ## O'zgarishlar (v0.5.0)
 - ✅ **Barqaror qurilma ID** — `ANDROID_ID` asosida; qayta o'rnatishda ham bir xil, botda

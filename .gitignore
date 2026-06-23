@@ -3,6 +3,10 @@
 config.php
 server-backup-*/
 
+# FTP/deploy maxfiy ma'lumotlari (login/parol) — HECH QACHON commit qilinmaydi
+.deploy.env
+.netrc
+
 # SQLite ma'lumotlar bazasi (kontaktlar, navbat)
 *.db
 *.db-wal

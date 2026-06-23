@@ -25,6 +25,26 @@ Ta'lim kompaniyasi (idrokedu.uz) o'z kontaktlariga ommaviy SMS yuborish uchun is
 ## Build / ishga tushirish
 - Android: `cd sms-gateway-app && ./gradlew assembleDebug`
 - Backend: PHP serverga `webhook.php` + `config.php` qo'yiladi; jadvallar avtomatik yaratiladi.
+- **Deploy**: `./deploy.sh` (webhook.php ni FTP orqali serverga yuklaydi). FTP login/parol
+  `.deploy.env` da (gitignore'langan). Host `sms.idrokedu.uz`, yo'l `/www/sms.idrokedu.uz/`.
+  Skript `config.php`/`sms.db` ni HECH QACHON yubormaydi. `./deploy.sh --apk` — APK yuklaydi.
+
+## v0.6.0 (server, deploy 2026-06-23) — joriy. CRM API + FAILOVER
+**Faqat `webhook.php`.** O'quv markaz CRM integratsiyasi (o'quvchi ma'lumotlari, OTP/tasdiqlash kodlari).
+1. ✅ **Avtomatik FAILOVER**: bitta qurilma SMS yubora olmasa (`update?status=failed`) — endi
+   darhol `failed` bo'lmaydi. SMS boshqa onlayn qurilmaga qayta navbatga qo'yiladi; xato
+   qaytargan qurilma o'sha SMS'ni qayta olmaydi. Barcha onlayn qurilma urinib ham bo'lmasa
+   (yoki `MAX_SEND_ATTEMPTS`=6) → shundagina `failed` + admin'ga ogohlantirish (OTP uchun).
+   - Yangi `queue` ustunlari: `attempts`, `failed_devices` (',dev1,dev2,'), `is_priority`
+     (1=OTP/CRM→test_pending, 0=ommaviy→pending). Migratsiya avtomatik (PRAGMA tekshiruv).
+   - `get_task` selektlari `failed_devices NOT LIKE` bilan xato qurilmani chetlab o'tadi.
+   - `recoverStuckTasks` endi is_priority'ga qarab tiklaydi (OTP'ni broadcast'ga tushirmaydi).
+   - Smart-break faqat YAKUNIY xatolarni sanaydi (har retry'ni emas).
+2. ✅ **CRM API kuchaytirildi** (eski maydonlar saqlanib, yangilari qo'shildi):
+   - `send` → `online_devices`, `deliverable` (qurilma onlaynmi), `segments` (necha SMS).
+   - `check_status` → `delivered`/`pending`/`failed` bool bayroqlar.
+   - `stats` → `ready` (kamida 1 qurilma onlayn), `queue.otp_pending`/`processing`,
+     `oldest_pending_age_s` (tiqilish), `night_mode`/`smart_break` bayroqlar.
 
 ## v0.0.2 da tuzatilgan (app)
 1. ✅ SMS real yetkazildi: `sendSms` endi PendingIntent (SENT) natijasiga qarab true/false.
